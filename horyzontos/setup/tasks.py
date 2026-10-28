@@ -594,9 +594,10 @@ def create_users(users):
         else:
             sh(["passwd", "-d", login])
         icon = _avatar_png(login, pics[i % len(pics)])
-        if icon:
-            write(f"/var/lib/AccountsService/users/{login}",
-                  f"[User]\nIcon={icon}\nSystemAccount=false\n", 0o600)
+        hint = (u.get("hint") or "").replace("\n", " ").strip()
+        acc = "[User]\n" + (f"Icon={icon}\n" if icon else "") + (f"PasswordHint={hint}\n" if hint else "") + \
+            "SystemAccount=false\n"
+        write(f"/var/lib/AccountsService/users/{login}", acc, 0o600)
         created.append({"login": login, "name": name, "admin": i == 0, "password": bool(u.get("password"))})
         log("utworzono konto", login)
     if not DRY and created:
@@ -604,8 +605,8 @@ def create_users(users):
     return created
 
 
-def finish_setup(created):
-    """Koniec konfiguracji: włącza ekran powitalny (albo automatyczne logowanie, gdy jest jedno konto bez hasła)."""
+def finish_setup(created, autologin=False):
+    """Koniec konfiguracji: włącza ekran powitalny (z automatycznym logowaniem pierwszego konta, gdy wybrano)."""
     dm_saved = os.path.join(STATE, "display-manager")
     target = ""
     try:
@@ -613,7 +614,7 @@ def finish_setup(created):
     except OSError:
         pass
     cfg = next((c for c in GREETER_CFG_CANDS if os.path.exists(c)), None)
-    if len(created) == 1 and not created[0]["password"] and cfg:
+    if autologin and created and cfg:
         sh([cfg, "autologin", created[0]["login"]])
     if cfg:
         # pod logo ekranu powitalnego nazwa systemu (zamiast „Fedora Linux 43” z os-release)

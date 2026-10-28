@@ -55,7 +55,28 @@ echo $? > "$XDG_RUNTIME_DIR/horyzontos-setup.rc"
 labwc --exit
 SH
 chmod 755 "$CFG/inner"
+# Dźwięk (muzyka powitalna): Fedora nie uruchamia PipeWire dla konta root (ConditionUser=!root w usługach
+# użytkownika), a konfigurator działa jako root — uruchamiamy serwer dźwięku sami na czas konfiguracji.
+AUDIO_PIDS=""
+start_audio() {
+    command -v pipewire >/dev/null || return 0
+    pgrep -u 0 -x pipewire >/dev/null && return 0
+    [ -S "$XDG_RUNTIME_DIR/bus" ] && export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+    local log=/var/log/horyzontos-audio.log
+    pipewire >>$log 2>&1 & AUDIO_PIDS="$!"
+    for i in $(seq 1 20); do [ -S "$XDG_RUNTIME_DIR/pipewire-0" ] && break; sleep 0.25; done
+    if command -v wireplumber >/dev/null; then wireplumber >>$log 2>&1 & AUDIO_PIDS="$AUDIO_PIDS $!"; fi
+    if command -v pipewire-pulse >/dev/null; then pipewire-pulse >>$log 2>&1 & AUDIO_PIDS="$AUDIO_PIDS $!"; fi
+    for i in $(seq 1 20); do [ -S "$XDG_RUNTIME_DIR/pulse/native" ] && break; sleep 0.25; done
+    # głośnik włączony i słyszalny (domyślnie WirePlumber ustawia ok. 40%)
+    ( for i in $(seq 1 20); do
+          wpctl inspect @DEFAULT_AUDIO_SINK@ >/dev/null 2>&1 && break; sleep 0.5
+      done
+      wpctl set-mute @DEFAULT_AUDIO_SINK@ 0; wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.7 ) >>$log 2>&1 &
+}
+start_audio
 labwc -C "$CFG" -s "$CFG/inner" >>/var/log/horyzontos-labwc.log 2>&1
+[ -n "$AUDIO_PIDS" ] && kill $AUDIO_PIDS 2>/dev/null
 if [ ! -f /var/lib/horyzontos/stage ]; then
     # konfiguracja zakończona — ekran powitalny (albo automatyczne logowanie)
     systemctl --no-block start display-manager.service

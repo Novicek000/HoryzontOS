@@ -990,11 +990,11 @@ class UsersPage(OobePage):
                     "account for each person so everyone gets their own desktop, documents and settings."), 14)
         grid = QGridLayout()
         grid.setHorizontalSpacing(14)
-        grid.setVerticalSpacing(6)
+        grid.setVerticalSpacing(4)
         self.fields = []
         labels = [T("&Twoje imię:", "&Your name:"), T("&Drugi użytkownik:", "&2nd User:"),
                   T("T&rzeci użytkownik:", "&3rd User:"), T("&Czwarty użytkownik:", "&4th User:"),
-                  T("&Piąty użytkownik:", "&5th User:")]
+                  T("P&iąty użytkownik:", "&5th User:")]
         for i, t in enumerate(labels):
             lab = QLabel(t)
             lab.setFont(look.font(14, i == 0))
@@ -1008,31 +1008,45 @@ class UsersPage(OobePage):
             self.fields.append(e)
         grid.setColumnStretch(2, 1)
         self.content.addLayout(grid)
-        self.setpw = QCheckBox(T("&Ustaw hasło dla mojego konta (zalecane, gdy z komputera korzysta wiele osób)",
-                                 "&Set a password for my account (recommended if several people use the computer)"))
-        self.setpw.setFont(look.font(13))
-        self.content.addWidget(self.setpw)
+        self.content.addSpacing(4)
+        self.pwinfo = self.text(T("Hasło do Twojego konta (wymagane — potrzebne np. do instalowania programów i sudo):",
+                                  "Password for your account (required — needed e.g. to install programs and for sudo):"),
+                                13, True)
         pg = QGridLayout()
-        pg.setHorizontalSpacing(14)
-        self.pw1, self.pw2 = QLineEdit(), QLineEdit()
-        for i, (t, e) in enumerate(((T("Hasło:", "Password:"), self.pw1), (T("Potwierdź hasło:", "Confirm:"), self.pw2))):
-            e.setEchoMode(QLineEdit.Password)
-            e.setFixedWidth(200)
-            lab = QLabel(t)
-            lab.setFont(look.font(13))
-            pg.addWidget(lab, 0, i * 2)
-            pg.addWidget(e, 0, i * 2 + 1)
-            e.setEnabled(False)
+        pg.setHorizontalSpacing(10)
+        pg.setVerticalSpacing(5)
+        self.pw1, self.pw2, self.hint = QLineEdit(), QLineEdit(), QLineEdit()
+        for e in (self.pw1, self.pw2, self.hint):
+            e.setFont(look.font(13))
+        self.pw1.setEchoMode(QLineEdit.Password)
+        self.pw2.setEchoMode(QLineEdit.Password)
+        self.pw1.setFixedWidth(180)
+        self.pw2.setFixedWidth(180)
+        self.hint.setMaxLength(60)
+
+        def lab(t, buddy):
+            l = QLabel(t)
+            l.setFont(look.font(13))
+            l.setBuddy(buddy)
+            return l
+        pg.addWidget(lab(T("&Hasło:", "&Password:"), self.pw1), 0, 0)
+        pg.addWidget(self.pw1, 0, 1)
+        pg.addWidget(lab(T("&Potwierdź hasło:", "C&onfirm:"), self.pw2), 0, 2)
+        pg.addWidget(self.pw2, 0, 3)
+        pg.addWidget(lab(T("Ws&kazówka:", "Password &hint:"), self.hint), 1, 0)
+        pg.addWidget(self.hint, 1, 1, 1, 3)
         pg.setColumnStretch(4, 1)
         pg.setContentsMargins(28, 0, 0, 0)
         self.content.addLayout(pg)
-        self.setpw.toggled.connect(lambda v: [e.setEnabled(v) for e in (self.pw1, self.pw2)])
+        self.autologin = QCheckBox(T("&Loguj mnie automatycznie po włączeniu komputera (bez wpisywania hasła)",
+                                     "&Log me on automatically when the computer starts (without typing the password)"))
+        self.autologin.setFont(look.font(13))
+        self.content.addWidget(self.autologin)
         self.content.addStretch(1)
-        self.text(T("Imiona będą widoczne na ekranie powitalnym w kolejności alfabetycznej. Pierwsze konto ma "
-                    "uprawnienia administratora. Hasła dla pozostałych kont ustawisz później w Panelu sterowania → "
-                    "Konta użytkowników.",
-                    "Names appear on the welcome screen in alphabetical order. The first account is an "
-                    "administrator. Set passwords for other accounts later in Control Panel → User Accounts."), 12)
+        self.text(T("Pierwsze konto jest administratorem. Pozostałe są zwykłymi kontami bez hasła — hasła ustawisz "
+                    "później w Panelu sterowania → Konta użytkowników.",
+                    "The first account is an administrator. Other accounts are standard accounts without a password — "
+                    "set passwords later in Control Panel → User Accounts."), 12)
 
     def on_enter(self):
         s = tasks.load_settings().get("setup", {})
@@ -1040,16 +1054,18 @@ class UsersPage(OobePage):
             self.fields[0].setText(s["owner"])
         self.fields[0].setFocus()
 
-    def _warn(self, text):
+    def _warn(self, text, focus=None):
         from ..ui.classic import message
         message(self, T("Kto będzie używać tego komputera?", "Who will use this computer?"), text)
+        if focus is not None:
+            focus.setFocus()
+            focus.selectAll()
 
     def validate(self):
         names = [e.text().strip() for e in self.fields]
         if not names[0]:
             self._warn(T("Musisz wpisać przynajmniej jedno imię, aby kontynuować.",
-                         "You must type at least one name to continue."))
-            self.fields[0].setFocus()
+                         "You must type at least one name to continue."), self.fields[0])
             return False
         seen = set()
         for n in names:
@@ -1063,14 +1079,28 @@ class UsersPage(OobePage):
                 self._warn(T("Imię nie może zawierać znaków : ani ,", "A name cannot contain : or ,"))
                 return False
             seen.add(n.lower())
-        pw = ""
-        if self.setpw.isChecked():
-            if self.pw1.text() != self.pw2.text():
-                self._warn(T("Wpisane hasła nie są zgodne.", "The passwords do not match."))
-                return False
-            pw = self.pw1.text()
-        users = [{"name": n, "password": pw if i == 0 else ""} for i, n in enumerate(names) if n]
+        pw = self.pw1.text()
+        if not pw:
+            self._warn(T("Wpisz hasło do swojego konta. Jest potrzebne do zadań administracyjnych (np. sudo). "
+                         "Jeśli nie chcesz go wpisywać przy każdym uruchomieniu, zaznacz logowanie automatyczne.",
+                         "Type a password for your account. It is needed for administrative tasks (e.g. sudo). "
+                         "If you do not want to type it at every start, select automatic logon."), self.pw1)
+            return False
+        if pw != self.pw2.text():
+            self._warn(T("Wpisane hasła nie są zgodne. Wpisz hasło ponownie w obu polach.",
+                         "The passwords do not match. Type the password again in both boxes."), self.pw1)
+            self.pw2.clear()
+            return False
+        hint = self.hint.text().strip()
+        if hint and pw.lower() in hint.lower():
+            self._warn(T("Wskazówka nie może zawierać hasła — każdy może ją zobaczyć na ekranie powitalnym.",
+                         "The hint cannot contain the password — anyone can see it on the welcome screen."),
+                       self.hint)
+            return False
+        users = [{"name": n, "password": pw if i == 0 else "", "hint": hint if i == 0 else ""}
+                 for i, n in enumerate([n for n in names if n])]
         self.app.choices["users"] = users
+        self.app.choices["autologin"] = self.autologin.isChecked()
         return True
 
 
@@ -1085,8 +1115,8 @@ class FinishPage(OobePage):
                     "Congratulations! Your computer is ready to use HoryzontOS."), 16)
         self.summary = self.text("", 14)
         self.content.addStretch(1)
-        self.text(T("Aby zakończyć konfigurację i przejść do ekranu powitalnego, kliknij przycisk Zakończ.",
-                    "To finish setup and go to the welcome screen, click Finish."))
+        self.text(T("Aby zakończyć konfigurację i zacząć korzystać z komputera, kliknij przycisk Zakończ.",
+                    "To finish setup and start using your computer, click Finish."))
 
     def on_enter(self):
         c = self.app.choices
@@ -1094,6 +1124,9 @@ class FinishPage(OobePage):
         users = c.get("users", [])
         if users:
             lines.append(T("Konta: ", "Accounts: ") + ", ".join(u["name"] for u in users))
+        lines.append(T("Logowanie automatyczne: ", "Automatic logon: ") +
+                     (T("włączone", "on") if c.get("autologin") else T("wyłączone (ekran powitalny z hasłem)",
+                                                                     "off (welcome screen with password)")))
         lines.append(T("Aktualizacje automatyczne: ", "Automatic Updates: ") +
                      (T("włączone", "on") if c.get("auto_updates", True) else T("tylko powiadomienia", "notify only")))
         tp = c.get("third_party", {})

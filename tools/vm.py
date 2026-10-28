@@ -49,7 +49,10 @@ def start(argv):
     uefi = "--uefi" in argv
     mem = "3072"
     boot = "d"
+    audio = None
     for i, a in enumerate(argv):
+        if a == "--audio":
+            audio = argv[i + 1]
         if a == "--mem":
             mem = argv[i + 1]
         if a == "--boot":
@@ -61,10 +64,13 @@ def start(argv):
             "-m", mem, "-vga", "std", "-display", "none", "-qmp", f"unix:{SOCK},server=on,wait=off",
             "-serial", f"file:{VMDIR}/serial.log", "-device", "qemu-xhci", "-device", "usb-tablet",
             "-device", "ahci,id=ahci",
-            "-drive", f"id=hd0,file={disk},if=none,format=qcow2,cache=unsafe", "-device", "ide-hd,drive=hd0,bus=ahci.0",
+            "-drive", f"id=hd0,file={disk},if=none,format={'raw' if disk.endswith('.raw') else 'qcow2'},cache=unsafe", "-device", "ide-hd,drive=hd0,bus=ahci.0",
             "-drive", f"id=cd0,file={iso},if=none,media=cdrom,readonly=on", "-device", "ide-cd,drive=cd0,bus=ahci.1",
             "-netdev", "user,id=n0", "-device", "e1000,netdev=n0",
-            "-boot", f"order={boot}c,menu=off", "-rtc", "base=localtime"]
+            "-boot", f"order={boot if boot == 'c' else boot + 'c'},menu=off", "-rtc", "base=localtime"]
+    if audio:
+        # dźwięk zapisywany do pliku WAV (sprawdzenie, czy system coś odtwarza)
+        args += ["-audiodev", f"wav,id=snd0,path={audio}", "-device", "intel-hda", "-device", "hda-output,audiodev=snd0"]
     if uefi:
         code = "/usr/share/edk2/ovmf/OVMF_CODE.fd"
         vars_ = os.path.join(VMDIR, "OVMF_VARS.fd")

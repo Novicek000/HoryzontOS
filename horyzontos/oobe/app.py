@@ -176,7 +176,7 @@ class Oobe(QWidget):
                                              tp.get("flathub") and self.online, tp.get("codecs") and self.online,
                                              lambda l: None)
                 created = tasks.create_users(c.get("users", []))
-                tasks.finish_setup(created)
+                tasks.finish_setup(created, c.get("autologin", False))
             except Exception as ex:
                 import traceback
                 tasks.log("BŁĄD zakończenia:", traceback.format_exc())
