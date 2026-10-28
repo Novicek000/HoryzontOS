@@ -161,6 +161,8 @@ stage_configure() {
     in_root flatpak config --system --set languages "pl;en"
     in_root flatpak install --system -y --noninteractive flathub org.mozilla.firefox 2>&1 | tail -3 | sed 's/^/   /' || true
     in_root flatpak info --system org.mozilla.firefox >/dev/null || die "Nie udało się zainstalować Firefoksa z Flathuba."
+    # katalog aplikacji Flathuba (bez niego wyszukiwanie w Dodaj/Usuń programy nic nie znajduje)
+    in_root flatpak update --appstream --system flathub 2>&1 | tail -1 | sed 's/^/   /' || true
 
     if [ -n "$PROXYENV" ]; then umount "$ROOT/etc/pki"; PROXYENV=""; fi
 

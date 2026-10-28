@@ -247,14 +247,15 @@ def write_bootloader_entries(plan):
 
 def no_grubenv_writes():
     """GRUB nie potrafi zapisywać grubenv na Btrfs („sparse file not allowed” przy każdym starcie).
-    Odczyt działa, więc wyłączamy tylko zapisy w skryptach generujących menu."""
+    Odczyt działa, więc wyłączamy tylko zapisy w skryptach generujących menu. Zamiast save_env zostaje „set”
+    (polecenia „true” nie ma w podpisanym GRUB-ie Fedory dla UEFI)."""
     for name in ("08_fallback_counting", "10_reset_boot_success", "12_menu_auto_hide", "14_menu_show_once"):
         path = os.path.join(SYSIMAGE, "etc", "grub.d", name)
         try:
             text = open(path).read()
         except OSError:
             continue
-        new = re.sub(r"(?m)^(\s*)save_env (.*)$", r"\1true  # HoryzontOS: save_env \2 (Btrfs)", text)
+        new = re.sub(r"(?m)^(\s*)save_env (.*)$", r"\1set horyzontos_noop=1  # HoryzontOS: save_env \2 (Btrfs)", text)
         if new != text:
             with open(path, "w") as f:
                 f.write(new)

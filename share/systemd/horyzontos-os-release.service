@@ -1,5 +1,5 @@
 [Unit]
-Description=Nazwa systemu HoryzontOS w /etc/os-release
+Description=Nazwa systemu HoryzontOS w /etc/os-release i poprawki starszych instalacji
 Documentation=https://github.com/Novicek000/HoryzontOS
 DefaultDependencies=no
 After=local-fs.target systemd-remount-fs.service
@@ -9,6 +9,7 @@ ConditionPathExists=/usr/lib/os-release
 [Service]
 Type=oneshot
 ExecStart=/usr/libexec/horyzontos/os-release-update
+ExecStart=-/usr/libexec/horyzontos/fixups
 
 [Install]
 WantedBy=sysinit.target

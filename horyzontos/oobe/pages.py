@@ -932,6 +932,8 @@ class UpdatePage(OobePage):
                                       "Updating Flatpak apps (Firefox)...")
                         rc2 = tasks.run_stream(["flatpak", "update", "--system", "-y", "--noninteractive"],
                                                lambda l: setattr(self, "line", l))
+                        tasks.run_stream(["flatpak", "update", "--appstream", "--system"],
+                                         lambda l: setattr(self, "line", l))
                         rc = rc or rc2
                     self.results[key] = (rc == 0, "")
                 else:

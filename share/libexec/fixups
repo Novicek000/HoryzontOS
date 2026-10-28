@@ -1,0 +1,11 @@
+#!/bin/bash
+# Poprawki systemów zainstalowanych ze starszych obrazów HoryzontOS (uruchamiane przy każdym starcie, szybkie).
+# 1. GRUB na Btrfs: zamiast save_env było „true”, którego nie ma w podpisanym GRUB-ie Fedory dla UEFI
+#    („error: can't find command `true'” przy starcie).
+OLD='true  # HoryzontOS: save_env'
+NEW='set horyzontos_noop=1  # HoryzontOS: save_env'
+for f in /etc/grub.d/08_fallback_counting /etc/grub.d/10_reset_boot_success /etc/grub.d/12_menu_auto_hide \
+         /etc/grub.d/14_menu_show_once /boot/grub2/grub.cfg; do
+    [ -f "$f" ] && grep -qF "$OLD" "$f" && sed -i "s/$OLD/$NEW/" "$f"
+done
+exit 0
