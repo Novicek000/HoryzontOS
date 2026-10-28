@@ -16,6 +16,10 @@ on:
   release:
     types: [published]
 
+# zapis do wydania (gh release upload) — domyślny token ma w nowych repozytoriach tylko odczyt
+permissions:
+  contents: write
+
 jobs:
   iso:
     runs-on: ubuntu-latest
