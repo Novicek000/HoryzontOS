@@ -274,7 +274,10 @@ stage_iso() {
     cp "$ROOT/boot/efi/EFI/fedora/grubx64.efi" "$ISO/EFI/BOOT/grubx64.efi"
     cp "$ROOT/boot/efi/EFI/fedora/mmx64.efi" "$ISO/EFI/BOOT/mmx64.efi" 2>/dev/null || true
     rm -f "$ISO/images/efiboot.img"
-    mkfs.msdos -C -n EFIBOOT "$ISO/images/efiboot.img" 8192 >/dev/null
+    # rozmiar obrazu FAT wg plików (nowsze wydania Fedory mają większe shim/GRUB) + zapas
+    local efikb; efikb=$(( $(du -sk "$ISO/EFI/BOOT" | cut -f1) + 2048 ))
+    [ "$efikb" -lt 8192 ] && efikb=8192
+    mkfs.msdos -C -n EFIBOOT "$ISO/images/efiboot.img" "$efikb" >/dev/null
     mmd -i "$ISO/images/efiboot.img" ::/EFI ::/EFI/BOOT
     mcopy -i "$ISO/images/efiboot.img" "$ISO"/EFI/BOOT/* ::/EFI/BOOT/
 
