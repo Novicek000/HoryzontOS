@@ -198,6 +198,21 @@ def main():
         print("zmiana po", f"{time.monotonic() - t0:.0f}s")
         sys.argv = [sys.argv[0], "settle", path, str(max(10, limit - (time.monotonic() - t0))), "3"]
         main()
+    elif cmd == "drag":
+        # przeciągnięcie myszą: drag X1 Y1 X2 Y2 W H
+        x1, y1, x2, y2, w, h = (int(a) for a in argv[:6])
+
+        def mv(x, y):
+            qmp("input-send-event", {"events": [{"type": "abs", "data": {"axis": "x", "value": int(x * 32767 / w)}},
+                                                {"type": "abs", "data": {"axis": "y", "value": int(y * 32767 / h)}}]})
+        mv(x1, y1)
+        time.sleep(0.3)
+        qmp("input-send-event", {"events": [{"type": "btn", "data": {"down": True, "button": "left"}}]})
+        for i in range(1, 21):
+            mv(x1 + (x2 - x1) * i / 20, y1 + (y2 - y1) * i / 20)
+            time.sleep(0.05)
+        time.sleep(0.3)
+        qmp("input-send-event", {"events": [{"type": "btn", "data": {"down": False, "button": "left"}}]})
     elif cmd == "eject":
         print(qmp("eject", {"id": "cd0", "force": True}))
     elif cmd == "quit":

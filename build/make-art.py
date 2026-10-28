@@ -295,6 +295,9 @@ SHUTDOWN_SCRIPT = r"""
 // --- zamykanie / ponowne uruchamianie: ekran jak „Trwa zamykanie systemu…”, w stylu ekranu powitalnego
 fun down_refresh () {
 }
+fun down_normal () {
+    box.SetOpacity(0);
+}
 mode = Plymouth.GetMode();
 if (mode == "shutdown" || mode == "reboot") {
     brand.SetOpacity(0);
@@ -328,6 +331,7 @@ if (mode == "shutdown" || mode == "reboot") {
     down_txt.SetX(W / 2 + 45 * k);
     down_txt.SetY(cy - th / 2 - 20 * k);
     Plymouth.SetRefreshFunction(down_refresh);
+    Plymouth.SetDisplayNormalFunction(down_normal);
 }
 """
 
