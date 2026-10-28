@@ -120,7 +120,7 @@ def copy_system(progress, cancelled=lambda: False):
     total = file_count()
     args = ["rsync", "-aHAXS", "--numeric-ids", "--out-format=%n",
             "--exclude=/proc/*", "--exclude=/sys/*", "--exclude=/dev/*", "--exclude=/run/*",
-            "--exclude=/tmp/*", "--exclude=/boot/efi/*", "--exclude=/mnt/*", "--exclude=/media/*",
+            "--exclude=/tmp/*", "--exclude=/boot/efi", "--exclude=/mnt/*", "--exclude=/media/*",
             src, SYSIMAGE + "/"]
     log("$", " ".join(args))
     p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
@@ -148,7 +148,7 @@ def copy_system(progress, cancelled=lambda: False):
     if os.path.isdir(efi_src) and os.path.ismount(os.path.join(SYSIMAGE, "boot", "efi")):
         run(["rsync", "-rt", "--no-o", "--no-g", "--no-p", "--modify-window=2", efi_src + "/",
              os.path.join(SYSIMAGE, "boot", "efi") + "/"])
-    for d in ("proc", "sys", "dev", "run", "tmp", "mnt", "media"):
+    for d in ("proc", "sys", "dev", "run", "tmp", "mnt", "media", "boot/efi"):
         os.makedirs(os.path.join(SYSIMAGE, d), exist_ok=True)
     os.chmod(os.path.join(SYSIMAGE, "tmp"), 0o1777)
     progress(1.0, "")
@@ -181,7 +181,10 @@ def _write(rel, text, mode=0o644):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write(text)
-    os.chmod(path, mode)
+    try:
+        os.chmod(path, mode)
+    except OSError:
+        pass        # FAT (partycja EFI) nie ma uprawnień uniksowych
 
 
 def write_fstab(plan):
