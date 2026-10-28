@@ -21,7 +21,8 @@ console() {
     PS1='[odzyskiwanie \W]# ' bash --norc -i
 }
 while true; do
-    plymouth quit --retain-splash 2>/dev/null
+    # jak menedżery logowania: plymouth oddaje ekran, ale obraz zostaje do pierwszej klatki Instalatora
+    plymouth deactivate 2>/dev/null
     python3 -P -m horyzontos textsetup
     rc=$?
     case "$rc" in

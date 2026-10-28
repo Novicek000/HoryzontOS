@@ -68,7 +68,7 @@ class Screen:
         self.g.put(0, 2, "═" * (len(t) + 3))
 
     def para(self, x, y, text, fg=GRAY, width=None):
-        width = width or min(72 - x, self.g.cols - x - 2)
+        width = width or min(70 - x, self.g.cols - x - 2)
         for line in wrap(text, width):
             self.g.put(x, y, line, fg)
             y += 1
@@ -76,7 +76,7 @@ class Screen:
 
     def bullet(self, y, text, x=6):
         self.g.put(x, y, "•")
-        return self.para(x + 3, y, text, width=min(64 - x, self.g.cols - x - 5))
+        return self.para(x + 3, y, text, width=min(54 - x, self.g.cols - x - 5))
 
 
 # ====================================================================== ekrany
@@ -1067,5 +1067,9 @@ def main(argv):
         w.showFullScreen()
     w.go(LoadingScreen(w))
     w.setFocus()
+    if not window:
+        import subprocess
+        QTimer.singleShot(1200, lambda: subprocess.Popen(["plymouth", "quit", "--retain-splash"],
+                                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
     rc = app.exec()
     return rc if rc is not None else 0

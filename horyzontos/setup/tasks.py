@@ -55,6 +55,8 @@ def write(path, text, mode=0o644):
         f.write(text)
     os.chmod(tmp, mode)
     os.replace(tmp, path)
+    if os.path.exists("/usr/sbin/restorecon"):
+        subprocess.run(["/usr/sbin/restorecon", "-F", path], capture_output=True)
 
 
 def read_json(path, default=None):
@@ -217,7 +219,6 @@ def start_menu_items():
 
 def hardware_scan():
     """„Instalowanie urządzeń”: udev, baza sprzętu, wykrycie karty NVIDIA (do podpowiedzi w konfiguratorze)."""
-    sh(["udevadm", "trigger", "--action=add"], timeout=60)
     sh(["udevadm", "settle", "-t", "60"], timeout=90)
     sh(["systemd-hwdb", "update"], timeout=300)
     # mniejszy initramfs tylko ze sterownikami tego komputera (szybszy start); ogólny zostaje, gdy się nie uda
@@ -510,6 +511,7 @@ def _avatar_png(login, name):
         if not DRY:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             img.save(path, "PNG")
+            subprocess.run(["restorecon", "-F", path], capture_output=True)
         return path
     except Exception as e:
         log("obrazek konta:", e)

@@ -43,7 +43,10 @@ for o in d:
             print(m["width"], m["height"]); raise SystemExit' 2>/dev/null)
 fi
 if [ "${W:-0}" -gt 0 ]; then
-    export QT_SCALE_FACTOR="$(python3 -c "s=min($W/800,$H/600); print(max(1.0, round(s*4)/4))")"
+    # instalator: jak w 640×480 — okno kreatora zajmuje większość ekranu między pasami;
+    # pierwsze uruchomienie: projekt 800×600
+    if grep -q oobe /var/lib/horyzontos/stage 2>/dev/null; then BW=800; BH=600; else BW=680; BH=490; fi
+    export QT_SCALE_FACTOR="$(python3 -c "import math; s=min($W/$BW,$H/$BH); print(max(1.0, math.floor(s*4)/4))")"
 fi
 export QT_QPA_PLATFORM=wayland
 export QT_WAYLAND_DISABLE_WINDOWDECORATION=1
