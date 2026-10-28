@@ -764,8 +764,7 @@ class ThirdPartyPage(OobePage):
                 ("rpmfusion", "RPM Fusion (darmowe i niewolne pakiety) — wymaga Internetu",
                  "RPM Fusion (free and nonfree packages) — needs the Internet"),
                 ("codecs", "Pełne kodeki multimedialne (MP4, H.264, AAC…) z RPM Fusion — wymaga Internetu",
-                 "Full multimedia codecs (MP4, H.264, AAC…) from RPM Fusion — needs the Internet"),
-                ("flathub", "Flathub — sklep z aplikacjami Flatpak", "Flathub — the Flatpak app store")):
+                 "Full multimedia codecs (MP4, H.264, AAC…) from RPM Fusion — needs the Internet")):
             cb = QCheckBox(T(pl, en))
             cb.key = key
             cb.user_set = False
@@ -783,7 +782,10 @@ class ThirdPartyPage(OobePage):
         self.enable.setChecked(False)
         self._en(False)
         self.content.addStretch(1)
-        self.text(T("Możesz je włączyć lub wyłączyć później.", "You can enable or disable them later."), 13)
+        self.text(T("Flathub (sklep z aplikacjami Flatpak) jest zawsze włączony — pochodzi z niego przeglądarka Firefox. "
+                    "Repozytoria możesz włączyć lub wyłączyć później.",
+                    "Flathub (the Flatpak app store) is always enabled — Firefox comes from it. You can enable or "
+                    "disable the repositories later."), 13)
 
     def _en(self, v):
         for cb in self.subs:
@@ -828,7 +830,7 @@ class UpdatePage(OobePage):
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(8)
         self.items = [("repos", T("Repozytoria firm trzecich", "Third-party repositories")),
-                      ("system", T("System Fedora i programy", "Fedora system and programs")),
+                      ("system", T("System Fedora i programy (także Firefox)", "Fedora system and programs (incl. Firefox)")),
                       ("desktop", T("Horyzont Desktop (pulpit)", "Horyzont Desktop")),
                       ("logon", T("Horyzont Logon (ekran powitalny)", "Horyzont Logon (welcome screen)"))]
         for i, (k, name) in enumerate(self.items):
@@ -924,6 +926,13 @@ class UpdatePage(OobePage):
                         if m and int(m.group(2)) > 0:
                             self.prog = base + span * int(m.group(1)) / int(m.group(2))
                     rc = tasks.run_stream(["dnf", "upgrade", "-y", "--refresh"], ol)
+                    # programy z Flatpaka (Firefox z Flathuba)
+                    if os.path.exists("/usr/bin/flatpak"):
+                        self.line = T("Aktualizowanie programów Flatpak (Firefox)...",
+                                      "Updating Flatpak apps (Firefox)...")
+                        rc2 = tasks.run_stream(["flatpak", "update", "--system", "-y", "--noninteractive"],
+                                               lambda l: setattr(self, "line", l))
+                        rc = rc or rc2
                     self.results[key] = (rc == 0, "")
                 else:
                     if not hasattr(self, "_hups"):

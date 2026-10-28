@@ -1,0 +1,39 @@
+#!/bin/bash
+# HoryzontOS: /etc/os-release z nazwą HoryzontOS (fastfetch, hostnamectl, Właściwości systemu, ekran powitalny).
+# Numer wersji Fedory (VERSION_ID) i pozostałe pola zostają z /usr/lib/os-release, żeby dnf, repozytoria
+# i programy sprawdzające Fedorę (ID_LIKE=fedora) działały bez zmian.
+# Uruchamiane przy budowaniu obrazu i przy każdym starcie (aktualizacja fedora-release przywraca dowiązanie).
+# Użycie: os-release-update [KATALOG_GŁÓWNY]
+ROOT="${1:-}"
+SRC="$ROOT/usr/lib/os-release"
+DST="$ROOT/etc/os-release"
+[ -f "$SRC" ] || exit 0
+HV="$(cat "$ROOT/usr/share/horyzontos/VERSION" 2>/dev/null || echo 1.0)"
+get() { sed -n "s/^$1=//p" "$SRC" | head -1 | sed 's/^"\(.*\)"$/\1/'; }
+VID="$(get VERSION_ID)"
+tmp="$(mktemp "$ROOT/etc/.os-release.XXXXXX")" || exit 1
+{
+    echo "NAME=\"HoryzontOS\""
+    echo "VERSION=\"$HV (Fedora Linux $VID)\""
+    echo "ID=horyzontos"
+    echo "ID_LIKE=fedora"
+    echo "VERSION_ID=$VID"
+    echo "VERSION_CODENAME=\"\""
+    echo "PRETTY_NAME=\"HoryzontOS $HV\""
+    echo "ANSI_COLOR=\"0;38;2;245;160;30\""
+    echo "LOGO=horyzontos-logo"
+    echo "DEFAULT_HOSTNAME=\"horyzont\""
+    echo "HOME_URL=\"https://github.com/Novicek000/HoryzontOS\""
+    echo "SUPPORT_URL=\"https://github.com/Novicek000/HoryzontOS/issues\""
+    echo "BUG_REPORT_URL=\"https://github.com/Novicek000/HoryzontOS/issues\""
+    echo "HORYZONTOS_VERSION=$HV"
+    # pola Fedory potrzebne innym programom
+    grep -E '^(RELEASE_TYPE|PLATFORM_ID|SUPPORT_END|REDHAT_[A-Z_]+|VARIANT|VARIANT_ID)=' "$SRC"
+} > "$tmp"
+if [ -L "$DST" ] || ! cmp -s "$tmp" "$DST"; then
+    chmod 644 "$tmp"
+    mv -f "$tmp" "$DST"
+else
+    rm -f "$tmp"
+fi
+exit 0

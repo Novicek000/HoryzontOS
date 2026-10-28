@@ -1,0 +1,7 @@
+# HoryzontOS: domyślne programy dla wszystkich użytkowników (własne wybory: ~/.config/mimeapps.list)
+[Default Applications]
+x-scheme-handler/http=org.mozilla.firefox.desktop
+x-scheme-handler/https=org.mozilla.firefox.desktop
+text/html=org.mozilla.firefox.desktop
+application/xhtml+xml=org.mozilla.firefox.desktop
+application/pdf=org.mozilla.firefox.desktop

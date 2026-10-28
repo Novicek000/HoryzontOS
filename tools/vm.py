@@ -50,7 +50,10 @@ def start(argv):
     mem = "3072"
     boot = "d"
     audio = None
+    res = None
     for i, a in enumerate(argv):
+        if a == "--res":
+            res = argv[i + 1]
         if a == "--audio":
             audio = argv[i + 1]
         if a == "--mem":
@@ -68,6 +71,11 @@ def start(argv):
             "-drive", f"id=cd0,file={iso},if=none,media=cdrom,readonly=on", "-device", "ide-cd,drive=cd0,bus=ahci.1",
             "-netdev", "user,id=n0", "-device", "e1000,netdev=n0",
             "-boot", f"order={boot if boot == 'c' else boot + 'c'},menu=off", "-rtc", "base=localtime"]
+    if res:
+        # ekran o zadanej rozdzielczości (EDID z preferowanym trybem), np. 1920x1080 do zrzutów
+        rw, rh = res.lower().split("x")
+        i = args.index("-vga")
+        args[i:i + 2] = ["-vga", "none", "-device", f"VGA,edid=on,xres={rw},yres={rh}"]
     if audio:
         # dźwięk zapisywany do pliku WAV (sprawdzenie, czy system coś odtwarza)
         args += ["-audiodev", f"wav,id=snd0,path={audio}", "-device", "intel-hda", "-device", "hda-output,audiodev=snd0"]

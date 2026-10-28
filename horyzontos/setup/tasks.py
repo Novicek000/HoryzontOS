@@ -207,7 +207,13 @@ def register_components(step):
         step(name)
         if shutil.which(args[0]):
             sh(args, timeout=300)
-    for d in glob.glob("/usr/share/icons/*/"):
+    # programy z Flatpaka (Firefox): przy budowaniu obrazu Flatpak nie mógł odświeżyć tych pamięci podręcznych
+    fx = "/var/lib/flatpak/exports/share"
+    if os.path.isdir(os.path.join(fx, "applications")) and shutil.which("update-desktop-database"):
+        sh(["update-desktop-database", "-q", os.path.join(fx, "applications")], timeout=120)
+    if os.path.isdir(os.path.join(fx, "mime")) and shutil.which("update-mime-database"):
+        sh(["update-mime-database", os.path.join(fx, "mime")], timeout=120)
+    for d in glob.glob("/usr/share/icons/*/") + glob.glob(os.path.join(fx, "icons", "*/")):
         if os.path.exists(os.path.join(d, "index.theme")) and shutil.which("gtk-update-icon-cache"):
             sh(["gtk-update-icon-cache", "-q", "-f", d], timeout=120)
 

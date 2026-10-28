@@ -115,6 +115,16 @@ install_horyzontos_files() {
     cp "$SRC"/share/sounds/* "$ROOT/usr/share/sounds/horyzontos/" 2>/dev/null || true
     in_root python3 -m compileall -q /usr/share/horyzontos >/dev/null || true
 
+    # fastfetch: logo HoryzontOS; os-release z nazwą HoryzontOS (odnawiany przy starcie przez usługę)
+    install -Dm644 "$SRC/share/fastfetch/config.jsonc" "$ROOT/etc/xdg/fastfetch/config.jsonc"
+    install -Dm644 "$SRC/share/fastfetch/logo.txt" "$ROOT/usr/share/horyzontos/fastfetch-logo.txt"
+    "$SRC/share/libexec/os-release-update" "$ROOT"
+    mkdir -p "$ROOT/etc/systemd/system/sysinit.target.wants"
+    ln -sf /usr/lib/systemd/system/horyzontos-os-release.service \
+        "$ROOT/etc/systemd/system/sysinit.target.wants/horyzontos-os-release.service"
+    # domyślna przeglądarka: Firefox z Flathuba
+    install -Dm644 "$SRC/share/mimeapps.list" "$ROOT/etc/xdg/mimeapps.list"
+
     cat > "$ROOT/etc/horyzontos-release" <<EOF
 NAME="HoryzontOS"
 VERSION="$VERSION"
@@ -138,6 +148,13 @@ stage_configure() {
     install_horyzont_component HoryzontDesktop "${DESKTOP_SRC:-}" ""
     say "Instalowanie Horyzont Logon (ekran powitalny)"
     install_horyzont_component HoryzontLogon "${LOGON_SRC:-}" "--yes"
+
+    say "Firefox z Flathuba"
+    in_root flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+    # język interfejsu Firefoksa: polski i angielski (pakiety językowe Flatpaka)
+    in_root flatpak config --system --set languages "pl;en"
+    in_root flatpak install --system -y --noninteractive flathub org.mozilla.firefox 2>&1 | tail -3 | sed 's/^/   /' || true
+    in_root flatpak info --system org.mozilla.firefox >/dev/null || die "Nie udało się zainstalować Firefoksa z Flathuba."
 
     if [ -n "$PROXYENV" ]; then umount "$ROOT/etc/pki"; PROXYENV=""; fi
 

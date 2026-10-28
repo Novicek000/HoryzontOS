@@ -3,6 +3,8 @@
 
   • motyw startowy plymouth „horyzont” — czarny ekran, logo i przesuwające się niebieskie bloczki,
   • motywy „horyzont-setup” (PL) i „horyzont-setup-en” — niebieski ekran ładowania instalatora,
+  • ekran zamykania / ponownego uruchamiania (w motywie „horyzont”, tryb shutdown/reboot) — jak „Trwa zamykanie
+    systemu…” z klasycznego systemu, w kolorach i układzie ekranu powitalnego Horyzont Logon,
   • muzyka pierwszego uruchomienia (oobe.wav), syntetyzowana od zera.
 
 Użycie: make-art.py KATALOG_ROOTFS WERSJA
@@ -19,7 +21,8 @@ sys.path.insert(0, SRC)
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPointF, QRectF, Qt  # noqa: E402
-from PySide6.QtGui import QColor, QFontMetrics, QImage, QLinearGradient, QPainter, QPen  # noqa: E402
+from PySide6.QtGui import (QColor, QFontDatabase, QFontMetrics, QImage, QLinearGradient, QPainter, QPen,  # noqa: E402
+                           QRadialGradient)
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 
@@ -105,8 +108,104 @@ def boot_theme(root):
         f.write("[Plymouth Theme]\nName=Horyzont\nDescription=Ekran startowy HoryzontOS\nModuleName=script\n\n"
                 "[script]\nImageDir=/usr/share/plymouth/themes/horyzont\n"
                 "ScriptFile=/usr/share/plymouth/themes/horyzont/horyzont.script\n")
+    shutdown_theme(root, d)
     with open(os.path.join(d, "horyzont.script"), "w") as f:
-        f.write(BOOT_SCRIPT)
+        f.write(BOOT_SCRIPT + SHUTDOWN_SCRIPT)
+
+
+# ------------------------------------------------------------------ ekran zamykania systemu
+# kolory schematu „teal” ekranu powitalnego Horyzont Logon (horyzont_greeter/ui/style.py)
+TEAL = {"band": ("#0d4f59", "#093f47"), "mid": "#1c7e8a", "glow": "#79d3db", "mid_dark": "#14636e", "line": "#cfeff2"}
+AMBER = ("#ffd38a", "#f6ad3e", "#e8901f", "#d47a12", "#c06a0c")
+SHUTDOWN_TEXT = {"shutdown": "Trwa zamykanie systemu...", "reboot": "Trwa ponowne uruchamianie systemu..."}
+
+
+def _alpha(c, a):
+    c = QColor(c)
+    c.setAlpha(a)
+    return c
+
+
+def _grad(x1, y1, x2, y2, stops):
+    g = QLinearGradient(x1, y1, x2, y2)
+    for pos, c in stops:
+        g.setColorAt(pos, QColor(c) if isinstance(c, str) else c)
+    return g
+
+
+def shutdown_background(w, h):
+    """Tło jak na ekranie powitalnym: ciemne pasy, jaśniejszy środek z poświatą, linie i pionowy rozdzielacz."""
+    sc = TEAL
+    im = QImage(w, h, QImage.Format_RGB32)
+    p = QPainter(im)
+    p.setRenderHint(QPainter.Antialiasing)
+    top_h = bot_h = int(h * 0.125)
+    top = QRectF(0, 0, w, top_h)
+    bottom = QRectF(0, h - bot_h, w, bot_h)
+    mid = QRectF(0, top_h, w, h - top_h - bot_h)
+    p.fillRect(top, _grad(0, 0, 0, top_h, [(0, sc["band"][1]), (1, sc["band"][0])]))
+    p.fillRect(bottom, _grad(0, h - bot_h, 0, h, [(0, sc["band"][0]), (1, sc["band"][1])]))
+    p.fillRect(mid, QColor(sc["mid"]))
+    g = QRadialGradient(QPointF(w * 0.18, top_h + mid.height() * 0.05), max(w, h) * 0.55)
+    g.setColorAt(0, _alpha(sc["glow"], 150))
+    g.setColorAt(0.45, _alpha(sc["glow"], 45))
+    g.setColorAt(1, _alpha(sc["glow"], 0))
+    p.fillRect(mid, g)
+    shade = QRectF(0, mid.bottom() - mid.height() * 0.35, w, mid.height() * 0.35)
+    p.fillRect(shade, _grad(0, shade.top(), 0, shade.bottom(), [(0, _alpha(sc["mid_dark"], 0)),
+                                                               (1, _alpha(sc["mid_dark"], 160))]))
+    lh = max(2.0, h / 384)
+    p.fillRect(QRectF(0, top_h - lh, w, lh), _grad(0, 0, w, 0, [
+        (0, _alpha(sc["line"], 40)), (0.35, _alpha(sc["line"], 230)), (0.8, _alpha(sc["line"], 120)),
+        (1, _alpha(sc["line"], 0))]))
+    p.fillRect(QRectF(0, h - bot_h, w, lh), _grad(0, 0, w, 0, [
+        (0, _alpha(AMBER[2], 0)), (0.3, _alpha(AMBER[1], 255)), (0.7, _alpha(AMBER[0], 220)),
+        (1, _alpha(AMBER[2], 0))]))
+    r = QRectF(w * 0.5, top_h + mid.height() * 0.08, max(1.2, h / 900), mid.height() * 0.84)
+    p.fillRect(r, _grad(0, r.top(), 0, r.bottom(), [(0, "#00ffffff"), (0.5, "#c8ffffff"), (1, "#00ffffff")]))
+    p.end()
+    return im
+
+
+def shutdown_theme(root, d):
+    from horyzontos.ui import look
+    # tła dla typowych proporcji ekranu (skrypt wybiera najbliższe i skaluje bez zniekształceń)
+    for name, (w, h) in (("down-169.png", (1920, 1080)), ("down-1610.png", (1920, 1200)),
+                         ("down-43.png", (1600, 1200))):
+        shutdown_background(w, h).save(os.path.join(d, name))
+    # logo (słońce + „Horyzont”) jak na ekranie powitalnym — wyrównane do prawej, przy rozdzielaczu;
+    # rysowane dla wysokości ekranu 1080 (k = 1080/768)
+    k = 1080 / 768
+    s = int(78 * k)
+    fn = look.font(40 * k, bold=True, italic=True)
+    tw = QFontMetrics(fn).horizontalAdvance("Horyzont")
+    lw, lh = int(s + 10 * k + tw + 12), s + 8
+    im = img(lw, lh)
+    p = QPainter(im)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setRenderHint(QPainter.TextAntialiasing)
+    look.draw_logo(p, QRectF(0, 2, s, s))
+    p.setFont(fn)
+    p.setPen(QColor(0, 0, 0, 60))
+    p.drawText(QRectF(s + 10 * k + 2, 4, tw + 6, s), Qt.AlignLeft | Qt.AlignVCenter, "Horyzont")
+    p.setPen(QColor("#ffffff"))
+    p.drawText(QRectF(s + 10 * k, 2, tw + 6, s), Qt.AlignLeft | Qt.AlignVCenter, "Horyzont")
+    p.end()
+    im.save(os.path.join(d, "down-logo.png"))
+    # komunikat po prawej stronie rozdzielacza (jak „Zapisywanie ustawień…” / „Trwa zamykanie systemu…”)
+    ft = look.font(20 * k)
+    for mode, text in SHUTDOWN_TEXT.items():
+        w = QFontMetrics(ft).horizontalAdvance(text) + 12
+        im = img(w, int(40 * k))
+        p = QPainter(im)
+        p.setRenderHint(QPainter.TextAntialiasing)
+        p.setFont(ft)
+        p.setPen(QColor(0, 0, 0, 70))
+        p.drawText(QRectF(2, 2, w, 40 * k), Qt.AlignLeft | Qt.AlignVCenter, text)
+        p.setPen(QColor("#ffffff"))
+        p.drawText(QRectF(0, 0, w, 40 * k), Qt.AlignLeft | Qt.AlignVCenter, text)
+        p.end()
+        im.save(os.path.join(d, f"down-{mode}.png"))
 
 
 BOOT_SCRIPT = r"""// Ekran startowy HoryzontOS: logo na czarnym tle i trzy niebieskie bloczki przesuwające się w ramce.
@@ -189,6 +288,47 @@ fun display_password_callback (prompt, nb) {
 }
 Plymouth.SetDisplayNormalFunction(display_normal_callback);
 Plymouth.SetDisplayPasswordFunction(display_password_callback);
+"""
+
+
+SHUTDOWN_SCRIPT = r"""
+// --- zamykanie / ponowne uruchamianie: ekran jak „Trwa zamykanie systemu…”, w stylu ekranu powitalnego
+fun down_refresh () {
+}
+mode = Plymouth.GetMode();
+if (mode == "shutdown" || mode == "reboot") {
+    brand.SetOpacity(0);
+    box.SetOpacity(0);
+    foot.SetOpacity(0);
+    for (i = 0; i < 3; i++) blocks[i].SetOpacity(0);
+    ratio = W / H;
+    if (ratio > 1.7) bgname = "down-169.png";
+    else if (ratio > 1.45) bgname = "down-1610.png";
+    else bgname = "down-43.png";
+    bg_img = Image(bgname);
+    down_bg = Sprite(bg_img.Scale(W, H));
+    down_bg.SetX(0);
+    down_bg.SetY(0);
+    down_bg.SetZ(-100);
+    k = H / 1080;
+    if (W / 1920 < k) k = W / 1920;
+    cy = H / 2;
+    logo_img = Image("down-logo.png");
+    lw = logo_img.GetWidth() * k;
+    lh = logo_img.GetHeight() * k;
+    down_logo = Sprite(logo_img.Scale(lw, lh));
+    down_logo.SetX(W / 2 - 45 * k - lw);
+    down_logo.SetY(cy - lh / 2 - 20 * k);
+    if (mode == "reboot") tname = "down-reboot.png";
+    else tname = "down-shutdown.png";
+    txt_img = Image(tname);
+    tw = txt_img.GetWidth() * k;
+    th = txt_img.GetHeight() * k;
+    down_txt = Sprite(txt_img.Scale(tw, th));
+    down_txt.SetX(W / 2 + 45 * k);
+    down_txt.SetY(cy - th / 2 - 20 * k);
+    Plymouth.SetRefreshFunction(down_refresh);
+}
 """
 
 
@@ -320,6 +460,10 @@ def music(path, seconds=48, rate=22050):
 def main():
     root = sys.argv[1]
     app = QApplication(sys.argv[:1])  # noqa: F841
+    # Tahoma z budowanego systemu (jak na ekranie powitalnym), gdy nie ma jej na komputerze budującym
+    import glob
+    for f in glob.glob(os.path.join(root, "usr/share/fonts/wine-tahoma*/*.ttf")):
+        QFontDatabase.addApplicationFont(f)
     boot_theme(root)
     files = setup_theme(root, "pl") + setup_theme(root, "en")
     os.makedirs(os.path.join(root, "etc/dracut.conf.d"), exist_ok=True)
