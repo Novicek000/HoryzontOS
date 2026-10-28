@@ -126,7 +126,7 @@ def main():
     elif cmd == "type":
         for ch in " ".join(argv):
             send(keys_for(ch))
-            time.sleep(0.06)
+            time.sleep(float(os.environ.get("TYPE_DELAY", "0.06")))
     elif cmd == "click":
         x, y = int(argv[0]), int(argv[1])
         w, h = (int(argv[2]), int(argv[3])) if len(argv) > 3 else (1024, 768)
@@ -137,6 +137,53 @@ def main():
         for down in (True, False):
             qmp("input-send-event", {"events": [{"type": "btn", "data": {"down": down, "button": "left"}}]})
             time.sleep(0.08)
+    elif cmd == "settle":
+        # czeka, aż obraz przestanie się zmieniać (albo upłynie limit), i zapisuje zrzut
+        path = argv[0]
+        limit = float(argv[1]) if len(argv) > 1 else 120
+        need = int(argv[2]) if len(argv) > 2 else 3
+        tmp = os.path.join(VMDIR, "settle.ppm")
+        from PIL import Image, ImageChops
+        prev, same, t0 = None, 0, time.monotonic()
+        while time.monotonic() - t0 < limit:
+            qmp("screendump", {"filename": tmp})
+            try:
+                im = Image.open(tmp).convert("RGB")
+            except OSError:
+                im = None
+            if im is not None and prev is not None and prev.size == im.size and \
+                    ImageChops.difference(prev, im).getbbox() is None:
+                same += 1
+                if same >= need:
+                    break
+            else:
+                same = 0
+            prev = im
+            time.sleep(2)
+        if prev is not None:
+            prev.save(path)
+        print(path, f"{time.monotonic() - t0:.0f}s")
+    elif cmd == "changed":
+        # czeka, aż obraz będzie inny niż REF (np. koniec ekranu ładowania), potem jak settle
+        ref, path = argv[0], argv[1]
+        limit = float(argv[2]) if len(argv) > 2 else 600
+        from PIL import Image, ImageChops
+        r = Image.open(ref).convert("RGB")
+        tmp = os.path.join(VMDIR, "chg.ppm")
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < limit:
+            qmp("screendump", {"filename": tmp})
+            try:
+                im = Image.open(tmp).convert("RGB")
+            except OSError:
+                time.sleep(2)
+                continue
+            if im.size != r.size or ImageChops.difference(r, im).getbbox() is not None:
+                break
+            time.sleep(3)
+        print("zmiana po", f"{time.monotonic() - t0:.0f}s")
+        sys.argv = [sys.argv[0], "settle", path, str(max(10, limit - (time.monotonic() - t0))), "3"]
+        main()
     elif cmd == "eject":
         print(qmp("eject", {"id": "cd0", "force": True}))
     elif cmd == "quit":

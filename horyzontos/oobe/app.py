@@ -24,7 +24,7 @@ class Oobe(QWidget):
         self.online = False
         self.bg = OobeBackground(self)
         self.stack = QStackedWidget(self)
-        self.stack.setStyleSheet(P.CSS)
+        self.stack.setStyleSheet(P.stylesheet())
         self.back = ArrowButton(T("&Wstecz", "&Back"), "left", self)
         self.skipb = ArrowButton(T("&Pomiń", "&Skip"), "none", self)
         self.next = ArrowButton(T("&Dalej", "&Next"), "right", self)
@@ -38,7 +38,8 @@ class Oobe(QWidget):
         self.foot = QLabel("", self)
         self.foot.setFont(look.font(12))
         self.foot.setStyleSheet("color: #cfdcff")
-        self.pages = [P.IntroPage(self), P.WelcomePage(self), P.AutoUpdatesPage(self), P.NetworkPage(self),
+        self.pages = [P.IntroPage(self), P.WelcomePage(self), P.AutoUpdatesPage(self),
+                      P.NetChoicePage(self), P.NetworkPage(self), P.EthernetPage(self),
                       P.ThirdPartyPage(self), P.UpdatePage(self), P.UsersPage(self), P.FinishPage(self)]
         for pg in self.pages:
             pg.apply_fonts(1.0)
@@ -73,7 +74,7 @@ class Oobe(QWidget):
             from PySide6.QtMultimedia import QSoundEffect
             s = QSoundEffect(self)
             s.setSource(QUrl.fromLocalFile(MUSIC))
-            s.setLoopCount(QSoundEffect.Infinite)
+            s.setLoopCount(-2)   # QSoundEffect::Infinite (PySide6 6.10 wymaga liczby)
             s.setVolume(0.45)
             s.play()
             self._music = s
@@ -136,8 +137,8 @@ class Oobe(QWidget):
 
     def skip_page(self):
         pg = self.current()
-        if isinstance(pg, P.NetworkPage):
-            pg.validate()
+        if hasattr(pg, "on_skip"):
+            pg.on_skip()
         i = self.pages.index(pg)
         j = i + 1
         while j < len(self.pages) - 1 and self.pages[j].skip():
@@ -168,7 +169,7 @@ class Oobe(QWidget):
             try:
                 tasks.configure_updates(c.get("auto_updates", True))
                 tp = c.get("third_party", {})
-                upd = self.pages[5]
+                upd = next(p for p in self.pages if isinstance(p, P.UpdatePage))
                 if any(tp.values()) and upd.state != "done":
                     # bez aktualizacji (offline albo pominięte) — włączamy to, co da się włączyć
                     tasks.enable_third_party(tp.get("fedora"), tp.get("rpmfusion") and self.online,

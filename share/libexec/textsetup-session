@@ -6,9 +6,17 @@ export LANG=C.UTF-8
 dmesg -n 1 2>/dev/null
 setterm --blank 0 --powerdown 0 </dev/tty1 >/dev/tty1 2>/dev/null
 LANGARG="$(sed -n 's/.*horyzontos\.lang=\([a-z]*\).*/\1/p' /proc/cmdline)"
+LOG=/tmp/horyzontos-install.log
 console() {
     plymouth quit 2>/dev/null
     chvt 1 2>/dev/null
+    # program graficzny mógł zostawić terminal w trybie graficznym i z wyłączoną klawiaturą
+    kbd_mode -u -C /dev/tty1 2>/dev/null
+    python3 -c 'import fcntl, os; fcntl.ioctl(os.open("/dev/tty1", os.O_RDWR), 0x4B3A, 0)' 2>/dev/null  # KDSETMODE KD_TEXT
+    printf '\033c' >/dev/tty1
+    setfont eurlatgr -C /dev/tty1 2>/dev/null
+    exec 3<&0 4>&1 5>&2
+    exec </dev/tty1 >/dev/tty1 2>&1
     clear
     if [ "$LANGARG" = en ]; then
         echo "HoryzontOS Recovery Console"
@@ -19,14 +27,83 @@ console() {
     fi
     echo
     PS1='[odzyskiwanie \W]# ' bash --norc -i
+    exec <&3 >&4 2>&5
 }
+DBG=/dev/null
+grep -qw horyzontos.debug /proc/cmdline && [ -c /dev/ttyS0 ] && DBG=/dev/ttyS0
+say() { echo "$*" | tee -a $LOG $DBG >&2; }
+[ "$DBG" != /dev/null ] && export QT_LOGGING_RULES="qt.qpa.*.debug=true"
+drm_state() {
+    for c in /sys/class/drm/card[0-9]; do
+        [ -e "$c" ] || continue
+        echo -n "$(basename "$c")=$(basename "$(readlink -f "$c/device/driver" 2>/dev/null)") "
+    done
+}
+# sterownik grafiki może się jeszcze zmieniać (simpledrm → właściwy) — Instalator rysuje bezpośrednio przez DRM
+udevadm settle -t 30 2>/dev/null
+for i in $(seq 1 20); do
+    real=0
+    for d in /sys/class/drm/card*/device/driver; do
+        [ -e "$d" ] || continue
+        case "$(basename "$(readlink -f "$d")")" in simple-framebuffer|simpledrm) ;; *) real=1;; esac
+    done
+    [ "$real" = 1 ] && break
+    grep -qw nomodeset /proc/cmdline && break
+    sleep 0.5
+done
+# Qt ma rysować na właściwej karcie (nie na tymczasowym simpledrm, który zniknie po załadowaniu sterownika)
+pick_card() {
+    local best=""
+    for c in /sys/class/drm/card[0-9]; do
+        [ -e "$c/device/driver" ] || continue
+        case "$(basename "$(readlink -f "$c/device/driver")")" in
+            simple-framebuffer|simpledrm) [ -z "$best" ] && best="/dev/dri/$(basename "$c")";;
+            *) echo "/dev/dri/$(basename "$c")"; return;;
+        esac
+    done
+    echo "$best"
+}
+RCF=/run/horyzontos-textsetup.rc
+fails=0
 while true; do
-    # jak menedżery logowania: plymouth oddaje ekran, ale obraz zostaje do pierwszej klatki Instalatora
-    plymouth deactivate 2>/dev/null
-    python3 -P -m horyzontos textsetup
+    # plymouth musi oddać kartę grafiki (DRM master), zanim Qt ustawi tryb ekranu; obraz ekranu ładowania
+    # zostaje (--retain-splash) do pierwszej klatki Instalatora
+    if plymouth --ping 2>/dev/null; then
+        plymouth quit --retain-splash --wait 2>/dev/null || plymouth quit --retain-splash 2>/dev/null
+        for i in 1 2 3 4 5 6 7 8 9 10; do plymouth --ping 2>/dev/null || break; sleep 0.3; done
+    fi
+    card="$(pick_card)"
+    say "textsetup: start, DRM: $(drm_state) -> ${card:-?}"
+    if [ -n "$card" ] && [ "$card" != /dev/dri/card0 ]; then
+        # Qt (linuxfb, tryb DRM) otwiera zawsze /dev/dri/card0. Na komputerach z UEFI card0 to zwykle tymczasowy
+        # simpledrm, który znika po załadowaniu sterownika — właściwa karta jest wtedy card1. Instalator dostaje
+        # własną przestrzeń montowań, w której card0 to właściwa karta.
+        devnum="$(cat "/sys/class/drm/$(basename "$card")/dev")"
+        unshare --mount --propagation private bash -c \
+            'mount -t tmpfs -o mode=755 tmpfs /dev/dri && mknod -m 660 /dev/dri/card0 c "${1%%:*}" "${1##*:}" &&
+             shift && exec "$@"' \
+            _ "$devnum" python3 -P -m horyzontos textsetup 2> >(tee -a $LOG $DBG >&2)
+    else
+        python3 -P -m horyzontos textsetup 2> >(tee -a $LOG $DBG >&2)
+    fi
     rc=$?
+    say "textsetup: koniec, kod $rc, DRM: $(drm_state)"
+    want="$(cat $RCF 2>/dev/null)"
+    if [ -z "$want" ] && [ "$rc" != 10 ] && [ "$fails" -lt 5 ]; then
+        # program zakończył się sam (np. utracił ekran) — uruchamiamy go ponownie
+        fails=$((fails + 1))
+        say "textsetup: nieoczekiwane zakończenie (kod $rc), ponowne uruchomienie $fails"
+        udevadm settle -t 10 2>/dev/null
+        sleep 2
+        continue
+    fi
     case "$rc" in
-        0|3) sync; systemctl reboot; exit 0;;
+        0|3) sync
+             # bez ekranu plymouth przy zamykaniu (motyw instalatora pokazuje „Instalator ładuje pliki”)
+             systemctl mask --runtime plymouth-reboot.service plymouth-poweroff.service plymouth-halt.service \
+                 >/dev/null 2>&1
+             plymouth quit 2>/dev/null
+             systemctl reboot; exit 0;;
         10) console;;
         *)  echo "Instalator zakończył się błędem (kod $rc). Dziennik: /tmp/horyzontos-install.log" >/dev/tty1
             sleep 3

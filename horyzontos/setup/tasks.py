@@ -172,7 +172,7 @@ def ethernet_devices():
     return [l.split(":")[0] for l in out.splitlines() if l.endswith(":ethernet")]
 
 
-def apply_network(net):
+def apply_network(net, activate=True):
     """net = {"mode": "typical"} albo {"mode": "custom", "device":…, "ipv4": "auto"|"manual", "address", "prefix",
     "gateway", "dns": [..], "avahi": bool}"""
     if not net or net.get("mode") != "custom":
@@ -194,7 +194,8 @@ def apply_network(net):
     if net.get("dns"):
         args += ["ipv4.dns", " ".join(net["dns"]), "ipv4.ignore-auto-dns", "yes"]
     sh(args)
-    sh(["nmcli", "connection", "up", name])
+    if activate:
+        sh(["nmcli", "connection", "up", name])
 
 
 def register_components(step):
@@ -284,13 +285,53 @@ def wired_status():
     """(urządzenie, połączone?) pierwszej karty przewodowej."""
     if DRY:
         return ("enp0s3", os.environ.get("HORYZONTOS_DRY_WIRED", "0") == "1")
-    out = subprocess.run(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device"], capture_output=True, text=True).stdout \
-        if shutil.which("nmcli") else ""
-    for l in out.splitlines():
-        parts = l.split(":")
-        if len(parts) >= 3 and parts[1] == "ethernet":
-            return parts[0], parts[2].startswith("connected") or parts[2] == "połączono"
+    for dev, up in net_devices()["ethernet"]:
+        return dev, up
     return None, False
+
+
+def net_devices():
+    """Karty sieciowe: {"wifi": [nazwa…], "ethernet": [(nazwa, połączona?)…]}."""
+    if DRY:
+        return {"wifi": [] if os.environ.get("HORYZONTOS_DRY_NOWIFI") else ["wlp2s0"],
+                "ethernet": [("enp0s3", os.environ.get("HORYZONTOS_DRY_WIRED", "0") == "1")]}
+    res = {"wifi": [], "ethernet": []}
+    if shutil.which("nmcli"):
+        out = subprocess.run(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device"], capture_output=True,
+                             text=True, env=dict(os.environ, LC_ALL="C")).stdout
+        for l in out.splitlines():
+            parts = l.split(":")
+            if len(parts) < 3:
+                continue
+            if parts[1] == "wifi":
+                res["wifi"].append(parts[0])
+            elif parts[1] == "ethernet":
+                res["ethernet"].append((parts[0], parts[2].startswith("connected")))
+    else:
+        for n in sorted(glob.glob("/sys/class/net/*")):
+            name = os.path.basename(n)
+            if os.path.isdir(os.path.join(n, "wireless")):
+                res["wifi"].append(name)
+            elif os.path.exists(os.path.join(n, "device")):
+                try:
+                    up = open(os.path.join(n, "carrier")).read().strip() == "1"
+                except OSError:
+                    up = False
+                res["ethernet"].append((name, up))
+    return res
+
+
+def ethernet_connect(dev, ipv4="auto", address="", prefix=24, gateway="", dns=()):
+    """Połączenie przewodowe (DHCP albo stały adres). Zwraca (ok, komunikat)."""
+    net = {"mode": "custom", "device": dev, "ipv4": ipv4, "address": address, "prefix": prefix,
+           "gateway": gateway, "dns": [d for d in dns if d]}
+    if DRY:
+        log("ethernet:", net)
+        return True, ""
+    apply_network(net, activate=False)
+    name = f"Połączenie lokalne ({dev})"
+    p = sh(["nmcli", "-w", "30", "connection", "up", name], timeout=45)
+    return p.returncode == 0, (p.stderr or p.stdout).strip()
 
 
 def wifi_list(rescan=True):
@@ -428,10 +469,26 @@ def horyzont_core():
     return core
 
 
+def github_reachable(timeout=15):
+    """Czy da się pobrać dane z GitHuba (HTTPS z weryfikacją certyfikatu)?"""
+    import urllib.request
+    try:
+        req = urllib.request.Request("https://api.github.com/rate_limit", headers={"User-Agent": "HoryzontOS"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            r.read(64)
+        return True
+    except Exception as e:
+        log("GitHub niedostępny:", e)
+        return False
+
+
 def horyzont_updates():
-    """[(nazwa, Update)] — dostępne nowsze wersje Horyzont Desktop i dodatków (ekran powitalny)."""
+    """[(nazwa, Update)] — dostępne nowsze wersje Horyzont Desktop i dodatków (ekran powitalny).
+    None, gdy GitHub jest nieosiągalny (sprawdzenie się nie udało)."""
     if DRY:
         return [("Horyzont Desktop", None), ("Horyzont Logon", None)]
+    if not github_reachable():
+        return None
     core = horyzont_core()
     out = []
     try:
@@ -559,6 +616,8 @@ def finish_setup(created):
     if len(created) == 1 and not created[0]["password"] and cfg:
         sh([cfg, "autologin", created[0]["login"]])
     if cfg:
+        # pod logo ekranu powitalnego nazwa systemu (zamiast „Fedora Linux 43” z os-release)
+        sh([cfg, "set", "subtitle", "HoryzontOS"])
         sh([cfg, "enable", "--quiet"])
     elif target:
         link = "/etc/systemd/system/display-manager.service"

@@ -582,11 +582,15 @@ class WorkgroupPage(Page):
         dom.setEnabled(False)
         dom.setFixedWidth(200)
         r3.addWidget(dom)
-        n = QLabel(T("(dołączanie do domeny nie jest dostępne podczas instalacji)", "(not available during Setup)"))
-        n.setEnabled(False)
-        r3.addWidget(n)
         r3.addStretch(1)
         self.body.addLayout(r3)
+        r4 = QHBoxLayout()
+        r4.addSpacing(26)
+        n = QLabel(T("(dołączanie do domeny nie jest dostępne podczas instalacji)", "(not available during Setup)"))
+        n.setEnabled(False)
+        n.setWordWrap(True)
+        r4.addWidget(n, 1)
+        self.body.addLayout(r4)
         self.body.addStretch(1)
 
     def validate(self):

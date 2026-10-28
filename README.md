@@ -11,7 +11,8 @@ classic early-2000s setup program (blue text-mode phase, graphical phase, first-
 ## Jak przebiega instalacja
 
 1. **Menu płyty** (GRUB, niebieskie tło): *Zainstaluj system HoryzontOS* / *Install HoryzontOS (English)* /
-   sprawdzenie nośnika / tryb podstawowej grafiki. Gdy na dysku jest już HoryzontOS, domyślnie uruchamia się system z dysku.
+   sprawdzenie nośnika / tryb podstawowej grafiki. Gdy na dysku jest już HoryzontOS, płyta pyta jak klasyczna:
+   *Naciśnij dowolny klawisz, aby uruchomić komputer z dysku CD lub DVD...* — bez klawisza startuje system z dysku.
 2. **Część tekstowa** — niebieski ekran 80×30 znaków z czcionką VGA, szary pasek stanu na dole:
    powitanie (ENTER / R = Konsola odzyskiwania / F3), umowa licencyjna (F8), lista dysków i partycji
    (ENTER instaluj, C utwórz, D usuń + L potwierdź), wybór systemu plików (Btrfs / ext4 / XFS, szybkie lub pełne
@@ -22,7 +23,9 @@ classic early-2000s setup program (blue text-mode phase, graphical phase, first-
    administratora (root), Ustawienia daty i godziny, Ustawienia sieciowe (typowe / niestandardowe z właściwościami
    TCP/IP), Grupa robocza; potem „Instalowanie elementów menu Start”, „Rejestrowanie składników”… i restart.
 4. **Pierwsze uruchomienie** („Witamy w systemie HoryzontOS”, z muzyką): Aktualizacje automatyczne,
-   **Połącz się z Internetem** (Wi-Fi z listy albo kabel; przycisk *Pomiń*), **repozytoria firm trzecich**
+   **Jak ten komputer będzie łączył się z Internetem?** (Wi-Fi / sieć lokalna — kabel Ethernet / *Pomiń*):
+   lista sieci Wi-Fi z kluczem sieci i siecią ukrytą albo *Ustawienia sieci lokalnej (LAN)* (adres automatyczny
+   lub stały IP, maska, brama, serwery DNS), **repozytoria firm trzecich**
    (repozytoria Fedory: Chrome/NVIDIA/Steam, RPM Fusion, kodeki, Flathub), **aktualizacja systemu, Horyzont Desktop
    i Horyzont Logon** od razu po połączeniu, *Kto będzie używać tego komputera?* (do 5 kont), *Dziękujemy!*.
    Jedno konto bez hasła = automatyczne logowanie (jak w klasycznym systemie); inaczej ekran powitalny.
@@ -36,7 +39,8 @@ sudo ./build/build.sh            # wynik: out/HoryzontOS-<wersja>-x86_64.iso (+ 
 ```
 
 Potrzeba ok. 15 GB miejsca i połączenia z Internetem (pakiety Fedory, Horyzont z GitHuba).
-Etapy można powtarzać osobno: `sudo ./build/build.sh configure squash iso`.
+Etapy można powtarzać osobno: `sudo ./build/build.sh configure squash iso`; same pliki instalatora:
+`sudo ./build/build.sh code squash iso`. Na czas testów szybsza kompresja: `SQUASH_LEVEL=3`.
 Lokalne kopie pulpitu i ekranu powitalnego: `DESKTOP_SRC=… LOGON_SRC=… sudo ./build/build.sh`.
 
 **GitHub Actions:** zakładka *Actions → Zbuduj ISO → Run workflow* buduje obraz i udostępnia go jako artefakt.

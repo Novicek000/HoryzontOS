@@ -213,6 +213,14 @@ def cmdline(plan):
     return opts + " rhgb quiet"
 
 
+def boot_prefix(plan):
+    r = chroot("grub2-mkrelpath", "/boot", check=False)
+    rel = (r.stdout or "").strip()
+    if r.returncode == 0 and rel.startswith("/"):
+        return rel.rstrip("/")
+    return "/root/boot" if plan.fstype == "btrfs" else "/boot"
+
+
 def write_bootloader_entries(plan):
     kver = plan.kver = kernel_version()
     mid = open(os.path.join(SYSIMAGE, "etc", "machine-id")).read().strip()
@@ -225,13 +233,33 @@ def write_bootloader_entries(plan):
         os.remove(os.path.join(ents, f))
     opts = cmdline(plan)
     _write("/etc/kernel/cmdline", opts + "\n")
+    # bez osobnej partycji /boot ścieżki we wpisie są względem głównego katalogu systemu plików
+    # (Btrfs: podwolumin root → /root/boot) — tak samo liczy je kernel-install Fedory (20-grub.install)
+    prefix = boot_prefix(plan)
     _write(f"/boot/loader/entries/{mid}-{kver}.conf",
-           f"title HoryzontOS ({kver})\nversion {kver}\nlinux /vmlinuz-{kver}\n"
-           f"initrd /initramfs-{kver}.img\noptions {opts}\ngrub_users $grub_users\n"
+           f"title HoryzontOS ({kver})\nversion {kver}\nlinux {prefix}/vmlinuz-{kver}\n"
+           f"initrd {prefix}/initramfs-{kver}.img\noptions {opts}\ngrub_users $grub_users\n"
            f"grub_arg --unrestricted\ngrub_class fedora\n")
 
 
+def no_grubenv_writes():
+    """GRUB nie potrafi zapisywać grubenv na Btrfs („sparse file not allowed” przy każdym starcie).
+    Odczyt działa, więc wyłączamy tylko zapisy w skryptach generujących menu."""
+    for name in ("08_fallback_counting", "10_reset_boot_success", "12_menu_auto_hide", "14_menu_show_once"):
+        path = os.path.join(SYSIMAGE, "etc", "grub.d", name)
+        try:
+            text = open(path).read()
+        except OSError:
+            continue
+        new = re.sub(r"(?m)^(\s*)save_env (.*)$", r"\1true  # HoryzontOS: save_env \2 (Btrfs)", text)
+        if new != text:
+            with open(path, "w") as f:
+                f.write(new)
+
+
 def install_grub(plan, step):
+    if plan.fstype == "btrfs":
+        no_grubenv_writes()
     chroot("grub2-editenv", "/boot/grub2/grubenv", "create", check=False)
     # menu GRUB-a ukryte (jak w klasycznym systemie); pokazuje się po przytrzymaniu Shift / Esc
     chroot("grub2-editenv", "/boot/grub2/grubenv", "set", "menu_auto_hide=1", "boot_success=1", check=False)

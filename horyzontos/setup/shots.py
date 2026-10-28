@@ -12,7 +12,7 @@ def run(what, out, size, keys):
     from PySide6.QtWidgets import QApplication
     from ..ui import look
     app = QApplication([])
-    look.setup_qapp(app)
+    look.setup_qapp(app, etch=(what == "gui"))
     if what == "gui":
         from .gui import GuiSetup
         w = GuiSetup()

@@ -14,16 +14,80 @@ from ..setup import tasks
 from ..ui import look
 from .frame import OobePage
 
-CSS = """
+CSS_BASE = """
 QRadioButton, QCheckBox { color: white; spacing: 8px; }
 QRadioButton:disabled, QCheckBox:disabled { color: #b8c7ee; }
 QLabel { color: white; }
+QLabel:disabled { color: #b8c7ee; }
 QLineEdit { background: white; color: black; border: 1px solid #1d3f8a; padding: 3px; }
+QLineEdit:disabled { background: #c9d6f2; color: #5a6b94; border: 1px solid #7f96cc; }
 QListWidget { background: white; color: black; border: 1px solid #1d3f8a; }
 QListWidget::item { padding: 4px; }
 QListWidget::item:selected { background: #316ac5; color: white; }
 QPushButton { padding: 3px 14px; }
 """
+
+
+def _indicators():
+    """Pola wyboru i przełączniki w stylu kreatora pierwszego uruchomienia (biały środek, zielony znacznik)."""
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QImage, QLinearGradient, QPainterPath
+    d = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", f"horyzontos-ind-{os.getuid()}")
+    os.makedirs(d, exist_ok=True)
+    css = []
+    for kind in ("radio", "check"):
+        for state in ("off", "on", "offd", "ond"):
+            for sc, suf in ((1, ""), (2, "@2x"), (3, "@3x")):
+                n = 13 * sc
+                img = QImage(n, n, QImage.Format_ARGB32)
+                img.fill(0)
+                p = QPainter(img)
+                p.setRenderHint(QPainter.Antialiasing)
+                p.scale(sc, sc)
+                dis = state.endswith("d")
+                g = QLinearGradient(0, 0, 13, 13)
+                g.setColorAt(0, QColor("#dcdcd7" if not dis else "#e8e8e8"))
+                g.setColorAt(1, QColor("#ffffff" if not dis else "#f2f2f2"))
+                p.setBrush(g)
+                p.setPen(QPen(QColor("#1c5180" if not dis else "#9aa7c0"), 1))
+                if kind == "radio":
+                    p.drawEllipse(QRectF(0.5, 0.5, 12, 12))
+                else:
+                    p.drawRect(QRectF(0.5, 0.5, 12, 12))
+                if state.startswith("on"):
+                    col = QColor("#21a121" if not dis else "#9fc49f")
+                    if kind == "radio":
+                        rg = QLinearGradient(4, 4, 9, 9)
+                        rg.setColorAt(0, QColor("#55d655" if not dis else "#b8d8b8"))
+                        rg.setColorAt(1, col)
+                        p.setBrush(rg)
+                        p.setPen(Qt.NoPen)
+                        p.drawEllipse(QRectF(3.5, 3.5, 6, 6))
+                    else:
+                        path = QPainterPath(QPointF(3, 6.2))
+                        path.lineTo(5.4, 8.6)
+                        path.lineTo(10, 3.8)
+                        p.setPen(QPen(col, 2.0, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                        p.setBrush(Qt.NoBrush)
+                        p.drawPath(path)
+                p.end()
+                img.save(os.path.join(d, f"{kind}-{state}{suf}.png"))
+        w = "QRadioButton" if kind == "radio" else "QCheckBox"
+        for sel, st in (("unchecked", "off"), ("checked", "on"), ("unchecked:disabled", "offd"),
+                        ("checked:disabled", "ond")):
+            css.append(f"{w}::indicator:{sel} {{ image: url({d}/{kind}-{st}.png); width: 13px; height: 13px; }}")
+    return "\n".join(css)
+
+
+def stylesheet():
+    try:
+        return CSS_BASE + _indicators()
+    except Exception as ex:
+        tasks.log("wskaźniki:", ex)
+        return CSS_BASE
+
+
+CSS = CSS_BASE
 
 
 class IntroPage(OobePage):
@@ -44,7 +108,8 @@ class IntroPage(OobePage):
 
     def _done(self):
         self.timer.stop()
-        self.app.go_next(force=True)
+        if self.app.current() is self:
+            self.app.go_next(force=True)
 
     def paintEvent(self, e):
         if self.t0 is None:
@@ -141,12 +206,342 @@ class _Bars(QWidget):
             p.fillRect(QRectF(28, 7, 9, 8), QColor("#d9a520"))
 
 
+class NetChoicePage(OobePage):
+    """„Jak ten komputer będzie łączył się z Internetem?” — Wi-Fi, kabel (Ethernet) albo pominięcie."""
+    can_skip = True
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.set_title(T("Jak ten komputer będzie łączył się z Internetem?",
+                         "How will this computer connect to the Internet?"))
+        self.text(T("Wybierz sposób połączenia z Internetem. Po połączeniu Instalator może od razu zaktualizować "
+                    "system, Horyzont Desktop i ekran powitalny.",
+                    "Select how this computer connects to the Internet. Once connected, Setup can update the system, "
+                    "Horyzont Desktop and the welcome screen right away."), 14)
+        self.group = QButtonGroup(self)
+        self.radios = {}
+        for key, pl, en, dpl, den in (
+                ("wifi", "Sieć &bezprzewodowa (Wi-Fi)", "&Wireless network (Wi-Fi)",
+                 "Połączenie bez kabla z routerem lub punktem dostępu. Potrzebny będzie klucz sieci (hasło).",
+                 "Connect without a cable to a router or access point. You will need the network key (password)."),
+                ("ethernet", "Sieć &lokalna (LAN) — kabel sieciowy (Ethernet)",
+                 "&Local area network (LAN) — network cable (Ethernet)",
+                 "Komputer jest podłączony kablem do routera, modemu lub sieci w firmie.",
+                 "This computer is connected with a cable to a router, modem or an office network."),
+                ("skip", "&Pomiń konfigurowanie połączenia z Internetem", "&Skip setting up an Internet connection",
+                 "Połączenie skonfigurujesz później, klikając ikonę sieci na pasku zadań. Aktualizacje i część "
+                 "repozytoriów nie będą wtedy dostępne podczas konfiguracji.",
+                 "You can connect later using the network icon on the taskbar. Updates and some repositories "
+                 "will not be available during setup.")):
+            rb = QRadioButton(T(pl, en))
+            rb.setFont(look.font(14, True))
+            self.group.addButton(rb)
+            self.content.addWidget(rb)
+            d = QLabel(T(dpl, den))
+            d.setWordWrap(True)
+            d.setFont(look.font(13))
+            d.setStyleSheet("color: #e6edff;")
+            d.setContentsMargins(30, 0, 0, 6)
+            self.content.addWidget(d)
+            self.radios[key] = (rb, d)
+        self.content.addStretch(1)
+        self.status = self.text("", 13, color="#fff2b0")
+        self.devs = None
+        self._th = None
+
+    def on_enter(self):
+        self.status.setText(T("Wykrywanie kart sieciowych...", "Detecting network adapters..."))
+
+        def work():
+            self._devs = tasks.net_devices()
+            self._on = tasks.online(2)
+        self._th = threading.Thread(target=work, daemon=True)
+        self._th.start()
+        QTimer.singleShot(200, self._check)
+
+    def busy(self):
+        return bool(self._th and self._th.is_alive())
+
+    def _check(self):
+        if self._th.is_alive():
+            QTimer.singleShot(200, self._check)
+            return
+        first = self.devs is None
+        self.devs = self._devs
+        self.app.online = self._on
+        wifi, eth = self.devs["wifi"], self.devs["ethernet"]
+        wired = [d for d, up in eth if up]
+        self.radios["wifi"][0].setEnabled(bool(wifi))
+        self.radios["ethernet"][0].setEnabled(bool(eth))
+        parts = []
+        if wifi:
+            parts.append(T("Wi-Fi: ", "Wi-Fi: ") + ", ".join(wifi))
+        else:
+            parts.append(T("nie wykryto karty sieci bezprzewodowej", "no wireless adapter found"))
+        if eth:
+            parts.append(T("Ethernet: ", "Ethernet: ") + ", ".join(
+                d + (T(" (kabel podłączony)", " (cable connected)") if up else "") for d, up in eth))
+        else:
+            parts.append(T("nie wykryto karty sieci przewodowej", "no wired adapter found"))
+        st = T("Wykryte karty sieciowe: ", "Network adapters: ") + ";  ".join(parts)
+        if self._on:
+            st = T("✓  Komputer jest już połączony z Internetem.  ", "✓  This computer is already connected to "
+                   "the Internet.  ") + st
+        self.status.setText(st)
+        if first or not self.group.checkedButton() or not self.group.checkedButton().isEnabled():
+            key = "ethernet" if wired else ("wifi" if wifi else ("ethernet" if eth else "skip"))
+            self.radios[key][0].setChecked(True)
+        self.app.refresh_buttons()
+
+    def choice(self):
+        for k, (rb, _) in self.radios.items():
+            if rb.isChecked():
+                return k
+        return "skip"
+
+    def validate(self):
+        self.app.choices["net"] = self.choice()
+        return True
+
+    def on_skip(self):
+        self.app.choices["net"] = "skip"
+
+
+class EthernetPage(OobePage):
+    """Ustawienia sieci lokalnej (LAN): adres automatyczny albo stały, serwery DNS."""
+    can_skip = True
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.set_title(T("Ustawienia sieci lokalnej (LAN)", "Local Area Network (LAN) settings"))
+        self.status = self.text("", 14)
+        self.text(T("Większość sieci domowych (router, modem kablowy) przydziela adresy automatycznie. Jeśli "
+                    "dostawca Internetu lub administrator sieci podał Ci stały adres IP, wpisz go poniżej.",
+                    "Most home networks (router, cable modem) assign addresses automatically. If your ISP or "
+                    "network administrator gave you a fixed IP address, type it below."), 13)
+        self.ip_auto = QRadioButton(T("Uzyskaj adres IP &automatycznie (zalecane)", "Obtain an IP address "
+                                      "&automatically (recommended)"))
+        self.ip_man = QRadioButton(T("&Użyj następującego adresu IP:", "U&se the following IP address:"))
+        g1 = QButtonGroup(self)
+        g1.addButton(self.ip_auto)
+        g1.addButton(self.ip_man)
+        self.dns_auto = QRadioButton(T("Uzyskaj adres serwera DNS a&utomatycznie", "O&btain DNS server address "
+                                       "automatically"))
+        self.dns_man = QRadioButton(T("U&żyj następujących adresów serwerów DNS:", "Us&e the following DNS server "
+                                      "addresses:"))
+        g2 = QButtonGroup(self)
+        g2.addButton(self.dns_auto)
+        g2.addButton(self.dns_man)
+        self.f = {}
+
+        def fields(rows):
+            grid = QGridLayout()
+            grid.setContentsMargins(30, 0, 0, 0)
+            grid.setHorizontalSpacing(14)
+            grid.setVerticalSpacing(4)
+            for i, (k, t) in enumerate(rows):
+                lab = QLabel(t)
+                lab.setFont(look.font(13))
+                e = QLineEdit()
+                e.setFixedWidth(170)
+                e.setFont(look.font(13))
+                e.setInputMask("")
+                lab.setBuddy(e)
+                grid.addWidget(lab, i, 0)
+                grid.addWidget(e, i, 1)
+                self.f[k] = (lab, e)
+            grid.setColumnStretch(2, 1)
+            return grid
+        for rb in (self.ip_auto, self.ip_man, self.dns_auto, self.dns_man):
+            rb.setFont(look.font(13, True))
+        self.content.addWidget(self.ip_auto)
+        self.content.addWidget(self.ip_man)
+        self.content.addLayout(fields([("ip", T("Adres IP:", "IP address:")),
+                                       ("mask", T("Maska podsieci:", "Subnet mask:")),
+                                       ("gw", T("Brama domyślna:", "Default gateway:"))]))
+        self.content.addSpacing(6)
+        self.content.addWidget(self.dns_auto)
+        self.content.addWidget(self.dns_man)
+        self.content.addLayout(fields([("dns1", T("Preferowany serwer DNS:", "Preferred DNS server:")),
+                                       ("dns2", T("Alternatywny serwer DNS:", "Alternate DNS server:"))]))
+        self.content.addStretch(1)
+        self.f["mask"][1].setText("255.255.255.0")
+        self.ip_auto.toggled.connect(self._en)
+        self.dns_auto.toggled.connect(self._en)
+        self.ip_auto.setChecked(True)
+        self.dns_auto.setChecked(True)
+        self._en()
+        self.state = "idle"     # idle → applying
+        self.dev = None
+        self.up = False
+        self._poll = QTimer(self)
+        self._poll.timeout.connect(self._refresh)
+
+    def skip(self):
+        return self.app.choices.get("net") != "ethernet"
+
+    def _en(self, *_):
+        man = self.ip_man.isChecked()
+        if man:
+            # przy stałym adresie serwery DNS trzeba podać (jak w klasycznym oknie TCP/IP)
+            self.dns_man.setChecked(True)
+        self.dns_auto.setEnabled(not man)
+        for k in ("ip", "mask", "gw"):
+            for w in self.f[k]:
+                w.setEnabled(man)
+        for k in ("dns1", "dns2"):
+            for w in self.f[k]:
+                w.setEnabled(self.dns_man.isChecked())
+
+    def on_enter(self):
+        self._refresh()
+        self._poll.start(3000)
+
+    def _refresh(self):
+        if self.state != "idle":
+            return
+
+        def work():
+            d = tasks.net_devices()["ethernet"]
+            self._r = (d, tasks.online(2))
+        th = threading.Thread(target=work, daemon=True)
+        th.start()
+
+        def check():
+            if th.is_alive():
+                QTimer.singleShot(250, check)
+                return
+            if self.state != "idle":
+                return
+            eth, on = self._r
+            self.dev = next((d for d, up in eth if up), eth[0][0] if eth else None)
+            self.up = any(up for _, up in eth)
+            self.app.online = on
+            if not eth:
+                self.status.setText(T("✗  Nie wykryto karty sieci przewodowej.", "✗  No wired network adapter "
+                                      "was found."))
+            elif on and self.up:
+                self.status.setText(T(f"✓  Kabel sieciowy jest podłączony ({self.dev}), komputer ma dostęp do "
+                                      "Internetu. Kliknij Dalej.", f"✓  The network cable is connected ({self.dev}) "
+                                      "and the computer is online. Click Next."))
+            elif self.up:
+                self.status.setText(T(f"Kabel sieciowy jest podłączony ({self.dev}), ale nie ma dostępu do "
+                                      "Internetu. Sprawdź ustawienia poniżej.", f"The cable is connected "
+                                      f"({self.dev}) but there is no Internet access. Check the settings below."))
+            else:
+                self.status.setText(T(f"Kabel sieciowy nie jest podłączony ({self.dev}). Podłącz kabel do "
+                                      "komputera i routera.", f"The network cable is unplugged ({self.dev}). "
+                                      "Connect the cable to the computer and the router."))
+        QTimer.singleShot(250, check)
+
+    def busy(self):
+        return self.state == "applying"
+
+    def _warn(self, text, field=None):
+        from ..ui.classic import message
+        message(self, T("Ustawienia sieci lokalnej (LAN)", "LAN settings"), text)
+        if field:
+            self.f[field][1].setFocus()
+            self.f[field][1].selectAll()
+
+    def _values(self):
+        import ipaddress
+        v = {"ipv4": "manual" if self.ip_man.isChecked() else "auto", "address": "", "prefix": 24,
+             "gateway": "", "dns": []}
+        if self.ip_man.isChecked():
+            try:
+                ip = ipaddress.IPv4Address(self.f["ip"][1].text().strip())
+            except ValueError:
+                return self._warn(T("Wpisz prawidłowy adres IP (np. 192.168.1.20).", "Type a valid IP address "
+                                    "(e.g. 192.168.1.20)."), "ip")
+            try:
+                prefix = ipaddress.IPv4Network("0.0.0.0/" + self.f["mask"][1].text().strip()).prefixlen
+            except ValueError:
+                return self._warn(T("Maska podsieci jest nieprawidłowa (np. 255.255.255.0).", "The subnet mask is "
+                                    "invalid (e.g. 255.255.255.0)."), "mask")
+            gw = self.f["gw"][1].text().strip()
+            if gw:
+                try:
+                    ipaddress.IPv4Address(gw)
+                except ValueError:
+                    return self._warn(T("Adres bramy domyślnej jest nieprawidłowy.", "The default gateway is "
+                                        "invalid."), "gw")
+            v.update(address=str(ip), prefix=prefix, gateway=gw)
+        if self.dns_man.isChecked():
+            for k in ("dns1", "dns2"):
+                t = self.f[k][1].text().strip()
+                if not t:
+                    continue
+                try:
+                    ipaddress.ip_address(t)
+                except ValueError:
+                    return self._warn(T("Adres serwera DNS jest nieprawidłowy.", "The DNS server address is "
+                                        "invalid."), k)
+                v["dns"].append(t)
+            if not v["dns"]:
+                return self._warn(T("Wpisz adres co najmniej jednego serwera DNS.", "Type at least one DNS "
+                                    "server address."), "dns1")
+        return v
+
+    def validate(self):
+        if self.state == "applying":
+            return False
+        if not self.dev:
+            self._warn(T("Nie wykryto karty sieci przewodowej. Kliknij Wstecz, aby wybrać inny sposób "
+                         "połączenia, albo Pomiń.", "No wired network adapter was found. Click Back to choose "
+                         "another connection type, or Skip."))
+            return False
+        v = self._values()
+        if v is None:
+            return False
+        if v["ipv4"] == "auto" and not v["dns"] and self.up and self.app.online:
+            self._poll.stop()
+            return True          # już połączono automatycznie — nic do zmiany
+        self.state = "applying"
+        self._poll.stop()
+        self.status.setText(T("Łączenie z siecią lokalną...", "Connecting to the local network..."))
+        self.app.refresh_buttons()
+
+        def work():
+            ok, err = tasks.ethernet_connect(self.dev, v["ipv4"], v["address"], v["prefix"], v["gateway"],
+                                             v["dns"])
+            self._res = (ok, err, ok and tasks.online(8))
+        th = threading.Thread(target=work, daemon=True)
+        th.start()
+
+        def check():
+            if th.is_alive():
+                QTimer.singleShot(300, check)
+                return
+            ok, err, on = self._res
+            self.state = "idle"
+            self.app.online = on
+            if on:
+                self.app.refresh_buttons()
+                self.app.go_next(force=True)
+                return
+            tasks.log("ethernet:", ok, err)
+            self.status.setText("✗  " + (T("Połączono z siecią lokalną, ale nie ma dostępu do Internetu. Sprawdź "
+                                           "ustawienia albo kliknij Pomiń.", "Connected to the local network, "
+                                           "but there is no Internet access. Check the settings or click Skip.")
+                                         if ok else T("Nie udało się połączyć z siecią lokalną. Sprawdź kabel i "
+                                                      "ustawienia albo kliknij Pomiń.", "Could not connect to the "
+                                                      "local network. Check the cable and settings or click Skip.")))
+            self._poll.start(5000)
+            self.app.refresh_buttons()
+        QTimer.singleShot(300, check)
+        return False
+
+    def on_skip(self):
+        self._poll.stop()
+
+
 class NetworkPage(OobePage):
     can_skip = True
 
     def __init__(self, app):
         super().__init__(app)
-        self.set_title(T("Połącz się z Internetem", "Connect to the Internet"))
+        self.set_title(T("Połącz się z siecią bezprzewodową", "Connect to a wireless network"))
         self.status = self.text("", 14)
         self.hint = self.text(T("Wybierz sieć bezprzewodową z listy, wpisz klucz sieci (hasło) i kliknij Połącz. "
                                 "Możesz też pominąć ten krok i połączyć się później, klikając ikonę sieci na pasku "
@@ -331,12 +726,18 @@ class NetworkPage(OobePage):
         if classic_dialog(self, T("Połącz z siecią ukrytą", "Connect to a hidden network"), build) and e.text().strip():
             self.connect_net(e.text().strip(), True)
 
+    def skip(self):
+        return self.app.choices.get("net") != "wifi"
+
     def busy(self):
         return self.busy_flag
 
     def validate(self):
         self._poll.stop()
         return True
+
+    def on_skip(self):
+        self._poll.stop()
 
 
 class ThirdPartyPage(OobePage):
@@ -364,6 +765,8 @@ class ThirdPartyPage(OobePage):
                 ("flathub", "Flathub — sklep z aplikacjami Flatpak", "Flathub — the Flatpak app store")):
             cb = QCheckBox(T(pl, en))
             cb.key = key
+            cb.user_set = False
+            cb.clicked.connect(lambda _=False, c=cb: setattr(c, "user_set", True))
             cb.setChecked(True)
             cb.setFont(look.font(13))
             row = QHBoxLayout()
@@ -383,8 +786,12 @@ class ThirdPartyPage(OobePage):
         for cb in self.subs:
             needs_net = cb.key in ("rpmfusion", "codecs")
             cb.setEnabled(v and (self.app.online or not needs_net))
-            if needs_net and not self.app.online:
-                cb.setChecked(False)
+            if needs_net:
+                if not self.app.online:
+                    cb.setChecked(False)
+                elif not cb.user_set:
+                    # połączenie pojawiło się dopiero w kreatorze — domyślnie zaznaczone jak pozostałe
+                    cb.setChecked(True)
 
     def on_enter(self):
         self._en(self.enable.isChecked())
@@ -516,11 +923,14 @@ class UpdatePage(OobePage):
                     rc = tasks.run_stream(["dnf", "upgrade", "-y", "--refresh"], ol)
                     self.results[key] = (rc == 0, "")
                 else:
-                    ups = getattr(self, "_hups", None)
-                    if ups is None:
+                    if not hasattr(self, "_hups"):
                         self.line = T("Sprawdzanie dostępnych wersji w serwisie GitHub...",
                                       "Checking for new versions on GitHub...")
-                        ups = self._hups = tasks.horyzont_updates()
+                        self._hups = tasks.horyzont_updates()
+                    ups = self._hups
+                    if ups is None:
+                        self.results[key] = (False, "")
+                        continue
                     want = "Desktop" if key == "desktop" else "Logon"
                     mine = [(n, u) for n, u in ups if (want in n) or (key == "logon" and ("powitalny" in n.lower() or
                                                                                          "welcome" in n.lower() or
@@ -684,8 +1094,16 @@ class FinishPage(OobePage):
         lines.append(T("Aktualizacje automatyczne: ", "Automatic Updates: ") +
                      (T("włączone", "on") if c.get("auto_updates", True) else T("tylko powiadomienia", "notify only")))
         tp = c.get("third_party", {})
-        lines.append(T("Repozytoria firm trzecich: ", "Third-party repositories: ") +
-                     (T("włączone", "enabled") if any(tp.values()) else T("wyłączone", "disabled")))
+        upd = next((p for p in self.app.pages if isinstance(p, UpdatePage)), None)
+        rep = getattr(upd, "results", {}).get("repos") if upd else None
+        if not any(tp.values()):
+            st = T("wyłączone", "disabled")
+        elif rep and not rep[0]:
+            st = T("włączone częściowo (część wymaga Internetu — dokończysz w Horyzont Updates)",
+                   "partly enabled (some need the Internet — finish in Horyzont Updates)")
+        else:
+            st = T("włączone", "enabled")
+        lines.append(T("Repozytoria firm trzecich: ", "Third-party repositories: ") + st)
         lines.append(T("Internet: ", "Internet: ") + (T("połączono", "connected") if self.app.online else
                                                      T("bez połączenia", "not connected")))
         self.summary.setText("\n".join("  •  " + l for l in lines))

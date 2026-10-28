@@ -203,6 +203,13 @@ class ClassicWizard(QFrame):
     def current_index(self):
         return self.pages.index(self.stack.currentWidget())
 
+    def keyPressEvent(self, e):
+        # Enter w polu tekstowym = przycisk domyślny „Dalej >” (jak w oknach dialogowych)
+        if e.key() in (Qt.Key_Return, Qt.Key_Enter) and self.next.isEnabled() and self.next.isVisible():
+            self.next.click()
+            return
+        super().keyPressEvent(e)
+
     def start(self, idx=0):
         self.history = []
         self.show_page(idx)

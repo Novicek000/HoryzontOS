@@ -22,7 +22,7 @@ def main(cmd, argv):
     app = QApplication(sys.argv[:1])
     app.setApplicationName("horyzontos-setup")
     app.setDesktopFileName("horyzontos-setup")
-    look.setup_qapp(app)
+    look.setup_qapp(app, etch=(st == "setup"))
     if st == "setup":
         from .gui import GuiSetup
         w = GuiSetup()

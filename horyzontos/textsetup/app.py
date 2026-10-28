@@ -1042,11 +1042,24 @@ class SetupApp(TextView):
 
     def finish(self, code):
         self.exit_code = code
+        # skrypt sesji odróżnia zamierzone zakończenie od utraty ekranu (np. zmiana sterownika grafiki)
+        try:
+            with open(RC_FILE, "w") as f:
+                f.write(f"{code}\n")
+        except OSError:
+            pass
         QApplication.instance().exit(code)
+
+
+RC_FILE = "/run/horyzontos-textsetup.rc"
 
 
 def main(argv):
     disks.LOG = LOG
+    try:
+        os.remove(RC_FILE)
+    except OSError:
+        pass
     try:
         with open(LOG, "a") as f:
             f.write(f"--- HoryzontOS Setup {time.ctime()}\n")

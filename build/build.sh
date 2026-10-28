@@ -4,6 +4,7 @@
 # Uruchamiaj jako root na Fedorze 43 (albo w kontenerze fedora:43 z --privileged), np.:
 #   sudo ./build/build.sh                    # wszystko: system plików, konfiguracja, squashfs, ISO
 #   sudo ./build/build.sh configure squash iso   # tylko wybrane etapy (rootfs musi już istnieć)
+#   sudo ./build/build.sh code squash iso        # tylko nowe pliki instalatora/konfiguratora
 #
 # Zmienne:
 #   WORK=/var/tmp/horyzontos-build    katalog roboczy (potrzeba ~15 GB)
@@ -96,24 +97,7 @@ install_horyzont_component() {
     rm -rf "$dst"
 }
 
-stage_configure() {
-    [ -x "$ROOT/usr/bin/bash" ] || die "Brak systemu plików — najpierw etap rootfs."
-    mount_chroot
-    cp /etc/resolv.conf "$ROOT/etc/resolv.conf.build" 2>/dev/null || true
-
-    # przy budowaniu za serwerem proxy: dnf w chroot korzysta z certyfikatów i proxy hosta (tylko na czas instalacji)
-    if [ -n "${HTTPS_PROXY:-}" ]; then
-        mount --bind /etc/pki "$ROOT/etc/pki"
-        PROXYENV="HTTPS_PROXY=$HTTPS_PROXY https_proxy=$HTTPS_PROXY"
-    fi
-    say "Instalowanie Horyzont Desktop"
-    install_horyzont_component HoryzontDesktop "${DESKTOP_SRC:-}" ""
-    say "Instalowanie Horyzont Logon (ekran powitalny)"
-    install_horyzont_component HoryzontLogon "${LOGON_SRC:-}" "--yes"
-
-    if [ -n "$PROXYENV" ]; then umount "$ROOT/etc/pki"; PROXYENV=""; fi
-
-    say "Instalowanie HoryzontOS (instalator, konfigurator, motyw startowy)"
+install_horyzontos_files() {
     rm -rf "$ROOT/usr/share/horyzontos"
     mkdir -p "$ROOT/usr/share/horyzontos" "$ROOT/usr/libexec/horyzontos"
     cp -r "$SRC/horyzontos" "$ROOT/usr/share/horyzontos/"
@@ -133,6 +117,28 @@ VERSION="$VERSION"
 BASE="Fedora Linux $RELEASEVER"
 BUILD_DATE="$(date -u +%Y-%m-%d)"
 EOF
+
+}
+
+stage_configure() {
+    [ -x "$ROOT/usr/bin/bash" ] || die "Brak systemu plików — najpierw etap rootfs."
+    mount_chroot
+    cp /etc/resolv.conf "$ROOT/etc/resolv.conf.build" 2>/dev/null || true
+
+    # przy budowaniu za serwerem proxy: dnf w chroot korzysta z certyfikatów i proxy hosta (tylko na czas instalacji)
+    if [ -n "${HTTPS_PROXY:-}" ]; then
+        mount --bind /etc/pki "$ROOT/etc/pki"
+        PROXYENV="HTTPS_PROXY=$HTTPS_PROXY https_proxy=$HTTPS_PROXY"
+    fi
+    say "Instalowanie Horyzont Desktop"
+    install_horyzont_component HoryzontDesktop "${DESKTOP_SRC:-}" ""
+    say "Instalowanie Horyzont Logon (ekran powitalny)"
+    install_horyzont_component HoryzontLogon "${LOGON_SRC:-}" "--yes"
+
+    if [ -n "$PROXYENV" ]; then umount "$ROOT/etc/pki"; PROXYENV=""; fi
+
+    say "Instalowanie HoryzontOS (instalator, konfigurator, motyw startowy)"
+    install_horyzontos_files
 
     say "Motyw startowy (plymouth) i GRUB"
     python3 "$SRC/build/make-art.py" "$ROOT" "$VERSION"
@@ -207,6 +213,17 @@ EOF
     find "$ROOT" -xdev | wc -l > "$WORK/filecount"
 }
 
+stage_code() {
+    # tylko pliki HoryzontOS (instalator, konfigurator) — bez ponownej instalacji pakietów
+    [ -d "$ROOT/usr/share/horyzontos" ] || die "Brak systemu plików — najpierw etapy rootfs i configure."
+    say "Odświeżanie plików HoryzontOS w $ROOT"
+    install_horyzontos_files
+    setfiles -F -r "$ROOT" "$ROOT/etc/selinux/targeted/contexts/files/file_contexts" \
+        "$ROOT/usr/share/horyzontos" "$ROOT/usr/libexec/horyzontos" "$ROOT/usr/lib/systemd/system" \
+        "$ROOT/usr/bin/horyzontos-setup" "$ROOT/etc/horyzontos-release" 2>&1 | tail -3 || true
+    find "$ROOT" -xdev | wc -l > "$WORK/filecount"
+}
+
 stage_squash() {
     say "Tworzenie squashfs (to potrwa)"
     mkdir -p "$ISO/LiveOS"
@@ -227,10 +244,26 @@ stage_iso() {
     cp "$ROOT/boot/initramfs-$kver.img" "$ISO/images/pxeboot/initrd.img"
 
     # konfiguracja menu (taka sama dla BIOS i UEFI)
-    sed "s/@LABEL@/$LABEL/g; s/@VERSION@/$VERSION/g" "$SRC/build/iso/grub.cfg" > "$ISO/EFI/BOOT/grub.cfg"
-    sed "s/@LABEL@/$LABEL/g; s/@VERSION@/$VERSION/g" "$SRC/build/iso/grub.cfg" > "$ISO/boot/grub2/grub.cfg"
+    # EXTRA_CMDLINE — dodatkowe parametry jądra (np. do testów: console=ttyS0 systemd.journald.forward_to_console=1)
+    local gsed="s/@LABEL@/$LABEL/g; s/@VERSION@/$VERSION/g; s|@EXTRA@|${EXTRA_CMDLINE:-}|g"
+    sed "$gsed" "$SRC/build/iso/grub.cfg" > "$ISO/EFI/BOOT/grub.cfg"
+    sed "$gsed" "$SRC/build/iso/grub.cfg" > "$ISO/boot/grub2/grub.cfg"
     cp "$ROOT/usr/share/grub/unicode.pf2" "$ISO/boot/grub2/fonts/" 2>/dev/null || true
     cp "$ROOT/usr/share/grub/unicode.pf2" "$ISO/EFI/BOOT/" 2>/dev/null || true
+    # motyw menu (wygląd instalatora tekstowego); napisy wstawiane tutaj, żeby plik theme.txt był wspólny
+    local th="$ISO/boot/grub2/themes/horyzontos"
+    rm -rf "$th"; mkdir -p "$th"
+    cp "$SRC"/build/iso/theme/*.png "$th/"
+    theme_txt() {  # $1 plik, potem: tytuł, linia1, linia2, linia3, odliczanie, klawisze
+        local f="$1"; shift
+        sed -e "s|@TITLE@|$1|" -e "s|@L1@|$2|" -e "s|@L2@|$3|" -e "s|@L3@|$4|" -e "s|@TIMEOUT@|$5|" \
+            -e "s|@KEYS@|$6|" "$SRC/build/iso/theme/theme.txt" > "$f"
+    }
+    theme_txt "$th/theme.txt" "Instalator systemu HoryzontOS $VERSION" "Witamy w Instalatorze." \
+        "Użyj klawiszy STRZAŁKA W GÓRĘ i STRZAŁKA W DÓŁ, aby wybrać element z listy," \
+        "a następnie naciśnij klawisz ENTER.   (English: choose the second item.)" \
+        "Instalator zostanie uruchomiony automatycznie za %d s..." \
+        "ENTER=Wybierz  E=Edytuj polecenia  C=Wiersz poleceń"
 
     # UEFI: shim + podpisany GRUB Fedory (działa z Secure Boot)
     cp "$ROOT/boot/efi/EFI/BOOT/BOOTX64.EFI" "$ISO/EFI/BOOT/BOOTX64.EFI"
@@ -266,6 +299,7 @@ for s in $STAGES; do
         deps) host_deps;;
         rootfs) stage_rootfs;;
         configure) stage_configure;;
+        code) stage_code;;
         squash) stage_squash;;
         iso) stage_iso;;
         *) die "Nieznany etap: $s";;

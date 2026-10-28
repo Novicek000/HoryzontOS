@@ -1,0 +1,36 @@
+# Menu płyty HoryzontOS w stylu niebieskiego instalatora tekstowego
+desktop-color: "#0000a8"
+title-text: ""
+message-font: "Unifont Regular 16"
+message-color: "#aaaaaa"
+terminal-font: "Unifont Regular 16"
+
++ label { left = 16 top = 12 width = 600 height = 20 text = "@TITLE@" font = "Unifont Regular 16" color = "#aaaaaa" }
++ image { left = 0 top = 34 width = 300 height = 6 file = "dbl.png" }
+
++ label { left = 40 top = 70 width = 100%-80 height = 20 text = "@L1@" font = "Unifont Regular 16" color = "#ffffff" }
++ label { left = 40 top = 104 width = 100%-80 height = 20 text = "@L2@" font = "Unifont Regular 16" color = "#aaaaaa" }
++ label { left = 40 top = 124 width = 100%-80 height = 20 text = "@L3@" font = "Unifont Regular 16" color = "#aaaaaa" }
+
++ boot_menu {
+    left = 64
+    top = 170
+    width = 100%-128
+    height = 50%
+    item_font = "Unifont Regular 16"
+    item_color = "#aaaaaa"
+    selected_item_font = "Unifont Regular 16"
+    selected_item_color = "#0000a8"
+    selected_item_pixmap_style = "select_*.png"
+    item_height = 20
+    item_padding = 6
+    item_spacing = 4
+    icon_width = 0
+    icon_height = 0
+    item_icon_space = 0
+    scrollbar = false
+}
+
++ label { id = "__timeout__" left = 40 top = 100%-60 width = 100%-80 height = 20 text = "@TIMEOUT@" font = "Unifont Regular 16" color = "#aaaaaa" }
++ label { left = 16 top = 100%-21 width = 100%-32 height = 20 text = "@KEYS@" font = "Unifont Regular 16" color = "#0a0a0a" }
++ image { left = 0 top = 100%-22 width = 100% height = 22 file = "bar.png" }

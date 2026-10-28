@@ -6,7 +6,7 @@ import sys
 from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import (QColor, QFont, QFontDatabase, QIcon, QLinearGradient, QPainter, QPainterPath,
                            QPalette, QPen, QPixmap, QRadialGradient)
-from PySide6.QtWidgets import QApplication, QStyleFactory
+from PySide6.QtWidgets import QApplication, QProxyStyle, QStyle, QStyleFactory
 
 # kolory klasycznego okna dialogowego
 FACE = "#d4d0c8"
@@ -79,8 +79,19 @@ def classic_palette():
     return p
 
 
-def setup_qapp(app):
+class _NoEtch(QProxyStyle):
+    """Bez „wytłoczonego” tekstu wyłączonych elementów (jak w kreatorze pierwszego uruchomienia)."""
+
+    def styleHint(self, hint, opt=None, widget=None, ret=None):
+        if hint == QStyle.SH_EtchDisabledText:
+            return 0
+        return super().styleHint(hint, opt, widget, ret)
+
+
+def setup_qapp(app, etch=True):
     st = QStyleFactory.create("Windows")
+    if st and not etch:
+        st = _NoEtch(st)
     if st:
         app.setStyle(st)
     app.setPalette(classic_palette())
