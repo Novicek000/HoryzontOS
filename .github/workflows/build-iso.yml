@@ -4,6 +4,15 @@ name: Zbuduj ISO
 
 on:
   workflow_dispatch:
+    inputs:
+      fedora:
+        description: "Wersja Fedory (np. 43, 44)"
+        required: true
+        default: "43"
+      version:
+        description: "Numer wersji HoryzontOS (np. 1.1.0; puste = z pliku VERSION)"
+        required: false
+        default: ""
   release:
     types: [published]
 
@@ -18,11 +27,25 @@ jobs:
           df -h /
       - uses: actions/checkout@v4
       - name: Zbuduj ISO w kontenerze Fedory
+        env:
+          # Run workflow: pola z okna; wydanie (Release): Fedora z pliku FEDORA_VERSION, numer z tagu (v1.1.0 → 1.1.0)
+          IN_FEDORA: ${{ github.event.inputs.fedora }}
+          IN_VERSION: ${{ github.event.inputs.version }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
+          FEDORA="${IN_FEDORA:-$(cat FEDORA_VERSION 2>/dev/null || echo 43)}"
+          FEDORA="$(echo "$FEDORA" | tr -d '[:space:]')"
+          VERSION="$(echo "${IN_VERSION:-${TAG#v}}" | tr -d '[:space:]')"
+          if ! [[ "$FEDORA" =~ ^([0-9]+|rawhide)$ ]]; then echo "::error::Nieprawidłowa wersja Fedory: $FEDORA"; exit 1; fi
+          if [ -n "$VERSION" ] && ! [[ "$VERSION" =~ ^[A-Za-z0-9.+_-]+$ ]]; then
+            echo "::error::Nieprawidłowy numer wersji HoryzontOS: $VERSION"; exit 1
+          fi
+          echo "Fedora $FEDORA, HoryzontOS ${VERSION:-$(cat VERSION)}"
           mkdir -p "$RUNNER_TEMP/work" out
           docker run --rm --privileged \
+            -e RELEASEVER="$FEDORA" -e HORYZONTOS_VERSION="$VERSION" \
             -v "$PWD:/src" -v "$RUNNER_TEMP/work:/work" \
-            registry.fedoraproject.org/fedora:43 \
+            "registry.fedoraproject.org/fedora:$FEDORA" \
             bash -c 'dnf -y install git && cd /src && WORK=/work OUT=/src/out ./build/build.sh'
           ls -lh out
       - name: Podziel obraz na części < 2 GB (limit plików w wydaniach)

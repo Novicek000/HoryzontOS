@@ -12,16 +12,20 @@
 #   DESKTOP_SRC / LOGON_SRC           lokalne kopie HoryzontDesktop / HoryzontLogon
 #                                     (domyślnie pobierane z GitHuba, gałąź main)
 #   RELEASEVER=43                     wersja Fedory
+#   HORYZONTOS_VERSION=1.1.0          numer wersji HoryzontOS (domyślnie z pliku VERSION)
 set -euo pipefail
 umask 022
 
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="${WORK:-/var/tmp/horyzontos-build}"
 OUT="${OUT:-$SRC/out}"
-RELEASEVER="${RELEASEVER:-43}"
+RELEASEVER="${RELEASEVER:-$(cat "$SRC/FEDORA_VERSION" 2>/dev/null || echo 43)}"
 ROOT="$WORK/rootfs"
 ISO="$WORK/iso"
-VERSION="$(cat "$SRC/VERSION")"
+# HORYZONTOS_VERSION — numer wersji HoryzontOS (domyślnie z pliku VERSION)
+VERSION="${HORYZONTOS_VERSION:-$(cat "$SRC/VERSION")}"
+case "$VERSION" in *[!A-Za-z0-9.+_-]*|"") echo "Nieprawidłowy numer wersji: $VERSION" >&2; exit 1;; esac
+case "$RELEASEVER" in *[!0-9]*|"") [ "$RELEASEVER" = rawhide ] || { echo "Nieprawidłowa wersja Fedory: $RELEASEVER" >&2; exit 1; };; esac
 LABEL="HORYZONTOS"
 ISONAME="HoryzontOS-$VERSION-x86_64.iso"
 
@@ -102,7 +106,7 @@ install_horyzontos_files() {
     mkdir -p "$ROOT/usr/share/horyzontos" "$ROOT/usr/libexec/horyzontos"
     cp -r "$SRC/horyzontos" "$ROOT/usr/share/horyzontos/"
     find "$ROOT/usr/share/horyzontos" -name __pycache__ -prune -exec rm -rf {} +
-    cp "$SRC/VERSION" "$ROOT/usr/share/horyzontos/VERSION"
+    echo "$VERSION" > "$ROOT/usr/share/horyzontos/VERSION"
     cp -r "$SRC/share/licenses" "$ROOT/usr/share/horyzontos/" 2>/dev/null || true
     install -m755 "$SRC"/share/libexec/* "$ROOT/usr/libexec/horyzontos/"
     install -m644 "$SRC"/share/systemd/* "$ROOT/usr/lib/systemd/system/"

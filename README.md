@@ -42,8 +42,15 @@ Potrzeba ok. 15 GB miejsca i połączenia z Internetem (pakiety Fedory, Horyzont
 Etapy można powtarzać osobno: `sudo ./build/build.sh configure squash iso`; same pliki instalatora:
 `sudo ./build/build.sh code squash iso`. Na czas testów szybsza kompresja: `SQUASH_LEVEL=3`.
 Lokalne kopie pulpitu i ekranu powitalnego: `DESKTOP_SRC=… LOGON_SRC=… sudo ./build/build.sh`.
+Inna wersja Fedory / numer wersji: `RELEASEVER=44 HORYZONTOS_VERSION=1.1.0 sudo ./build/build.sh`.
 
-**GitHub Actions:** zakładka *Actions → Zbuduj ISO → Run workflow* buduje obraz i udostępnia go jako artefakt.
+**GitHub Actions:** zakładka *Actions → Zbuduj ISO → Run workflow* buduje obraz i udostępnia go jako artefakt
+(przechowywany 14 dni). W oknie *Run workflow* są pola:
+- **Wersja Fedory** (np. `43`, `44`, `rawhide`; domyślnie z pliku `FEDORA_VERSION`),
+- **Numer wersji HoryzontOS** (np. `1.1.0`; puste = z pliku `VERSION`) — trafia do nazwy ISO, menu płyty i systemu.
+
+Horyzont Desktop i Horyzont Logon są zawsze pobierane w najnowszej wersji (gałąź `main`), a pakiety Fedory
+ze wszystkimi aktualizacjami z dnia budowania. Przy wydaniu (Release) numer wersji bierze się z tagu (`v1.1.0` → `1.1.0`).
 Opublikowanie wydania (Release) dołącza ISO do wydania (pliki > 2 GB są dzielone na części:
 `cat HoryzontOS-*.iso.part* > HoryzontOS.iso`).
 
