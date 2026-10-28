@@ -141,8 +141,8 @@ wlr-randr
 xdg-user-dirs
 polkit
 accountsservice
-wine-tahoma-fonts
-?wine-tahoma-fonts-system
+wine-tahoma-fonts-system
+?wine-tahoma-fonts
 grim
 swayidle
 swaylock
