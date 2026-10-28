@@ -1,0 +1,8 @@
+[Unit]
+Description=Instalator systemu HoryzontOS (płyta / pendrive)
+Documentation=https://github.com/Novicek000/HoryzontOS
+Requires=basic.target
+Wants=horyzontos-textsetup.service systemd-logind.service
+After=basic.target horyzontos-textsetup.service
+Conflicts=rescue.service rescue.target
+AllowIsolate=yes

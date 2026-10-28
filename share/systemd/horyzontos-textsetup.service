@@ -1,0 +1,17 @@
+[Unit]
+Description=Instalator systemu HoryzontOS (część tekstowa)
+After=systemd-udev-settle.service systemd-udev-trigger.service plymouth-start.service systemd-logind.service systemd-vconsole-setup.service
+Conflicts=getty@tty1.service
+ConditionKernelCommandLine=rd.live.image
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/horyzontos/textsetup-session
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+KillMode=mixed
+Restart=no

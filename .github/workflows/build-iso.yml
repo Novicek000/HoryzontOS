@@ -1,0 +1,50 @@
+# Budowanie obrazu ISO HoryzontOS w GitHub Actions.
+# Uruchomienie: zakładka Actions → „Zbuduj ISO” → Run workflow, albo utworzenie wydania (Release) z tagiem v*.
+name: Zbuduj ISO
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Zwolnij miejsce na dysku
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+      - uses: actions/checkout@v4
+      - name: Zbuduj ISO w kontenerze Fedory
+        run: |
+          mkdir -p "$RUNNER_TEMP/work" out
+          docker run --rm --privileged \
+            -v "$PWD:/src" -v "$RUNNER_TEMP/work:/work" \
+            registry.fedoraproject.org/fedora:43 \
+            bash -c 'dnf -y install git && cd /src && WORK=/work OUT=/src/out ./build/build.sh'
+          ls -lh out
+      - name: Podziel obraz na części < 2 GB (limit plików w wydaniach)
+        run: |
+          cd out
+          for f in *.iso; do
+            if [ "$(stat -c %s "$f")" -gt 2000000000 ]; then
+              split -b 1900M -d -a 1 "$f" "$f.part"
+            fi
+          done
+          ls -lh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HoryzontOS-ISO
+          path: out/*.iso*
+          compression-level: 0
+          retention-days: 14
+      - name: Dołącz do wydania
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out
+          files=$(ls *.sha256; if ls *.part* >/dev/null 2>&1; then ls *.part*; else ls *.iso; fi)
+          gh release upload "${{ github.event.release.tag_name }}" $files --clobber -R "${{ github.repository }}"

@@ -1,0 +1,4 @@
+#!/bin/sh
+# HoryzontOS — narzędzia instalatora (podgląd: horyzontos-setup gui-setup --window | oobe --window)
+export PYTHONPATH=/usr/share/horyzontos
+exec /usr/bin/python3 -P -m horyzontos "$@"

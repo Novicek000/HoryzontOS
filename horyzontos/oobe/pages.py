@@ -1,0 +1,691 @@
+"""Strony pierwszego uruchomienia („Witamy w systemie HoryzontOS”)."""
+import json
+import os
+import threading
+import time
+
+from PySide6.QtCore import QRectF, Qt, QTimer
+from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+                               QListWidget, QListWidgetItem, QProgressBar, QPushButton, QRadioButton, QWidget)
+
+from ..i18n import T
+from ..setup import tasks
+from ..ui import look
+from .frame import OobePage
+
+CSS = """
+QRadioButton, QCheckBox { color: white; spacing: 8px; }
+QRadioButton:disabled, QCheckBox:disabled { color: #b8c7ee; }
+QLabel { color: white; }
+QLineEdit { background: white; color: black; border: 1px solid #1d3f8a; padding: 3px; }
+QListWidget { background: white; color: black; border: 1px solid #1d3f8a; }
+QListWidget::item { padding: 4px; }
+QListWidget::item:selected { background: #316ac5; color: white; }
+QPushButton { padding: 3px 14px; }
+"""
+
+
+class IntroPage(OobePage):
+    """Krótka animacja: wschodzące słońce Horyzontu i napis."""
+
+    show_back = False
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.t0 = None
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update)
+
+    def on_enter(self):
+        self.t0 = time.monotonic()
+        self.timer.start(30)
+        QTimer.singleShot(4200, self._done)
+
+    def _done(self):
+        self.timer.stop()
+        self.app.go_next(force=True)
+
+    def paintEvent(self, e):
+        if self.t0 is None:
+            return
+        t = time.monotonic() - self.t0
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        # słońce wschodzi zza linii horyzontu
+        k = min(1.0, t / 2.2)
+        ease = 1 - (1 - k) ** 3
+        size = min(w, h) * 0.32
+        cy = h * 0.55 - ease * h * 0.12
+        p.setOpacity(min(1.0, t / 1.2))
+        look.draw_logo(p, QRectF(w / 2 - size / 2, cy - size / 2, size, size))
+        p.setOpacity(1.0)
+        if t > 1.8:
+            p.setOpacity(min(1.0, (t - 1.8) / 1.0))
+            hh = size * 0.30
+            from PySide6.QtGui import QFontMetrics
+            f1 = look.font(hh, bold=True, fam=look.title_family())
+            f2 = look.font(hh * 0.55, bold=True, italic=True, fam=look.title_family())
+            tw = QFontMetrics(f1).horizontalAdvance("Horyzont") + hh * 0.06 + QFontMetrics(f2).horizontalAdvance("OS")
+            look.draw_wordmark(p, w / 2 - tw / 2, cy + size * 0.58, hh)
+
+
+class WelcomePage(OobePage):
+    show_back = False
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.set_title(T("Witamy w systemie HoryzontOS", "Welcome to HoryzontOS"))
+        self.text(T("Dziękujemy za wybór systemu HoryzontOS. Poświęć kilka minut na przygotowanie komputera do pracy.",
+                    "Thank you for choosing HoryzontOS. Let's spend a few minutes setting up your computer."))
+        self.text(T("W ciągu następnych kilku minut możesz:", "During the next few minutes you can:"))
+        self.text(T("  •  połączyć się z Internetem przez Wi-Fi albo kabel sieciowy,\n"
+                    "  •  włączyć repozytoria oprogramowania firm trzecich,\n"
+                    "  •  od razu zaktualizować system, pulpit Horyzont i ekran powitalny,\n"
+                    "  •  utworzyć konta dla osób, które będą używać tego komputera.",
+                    "  •  connect to the Internet over Wi-Fi or a network cable,\n"
+                    "  •  enable third-party software repositories,\n"
+                    "  •  update the system, the Horyzont desktop and the welcome screen right away,\n"
+                    "  •  create accounts for the people who will use this computer."))
+        self.content.addStretch(1)
+        self.text(T("Aby kontynuować, kliknij przycisk Dalej.", "To continue, click Next."))
+
+
+class AutoUpdatesPage(OobePage):
+    def __init__(self, app):
+        super().__init__(app)
+        self.set_title(T("Pomóż chronić swój komputer", "Help protect your PC"))
+        self.text(T("Aktualizacje automatyczne regularnie pobierają i instalują najnowsze poprawki zabezpieczeń "
+                    "i ulepszenia systemu HoryzontOS, programów, pulpitu Horyzont oraz ekranu powitalnego — bez "
+                    "Twojego udziału, gdy komputer jest połączony z Internetem.",
+                    "Automatic Updates regularly download and install the latest security fixes and improvements for "
+                    "HoryzontOS, your programs, the Horyzont desktop and the welcome screen — without any effort "
+                    "from you, whenever the computer is online."))
+        self.content.addSpacing(8)
+        self.auto = QRadioButton(T("Pomóż chronić mój komputer, włączając teraz &Aktualizacje automatyczne",
+                                   "Help protect my PC by turning on &Automatic Updates now"))
+        self.notify = QRadioButton(T("&Nie teraz — tylko powiadamiaj mnie o dostępnych aktualizacjach",
+                                     "&Not right now — just notify me when updates are available"))
+        for r in (self.auto, self.notify):
+            r.setFont(look.font(14, True))
+            self.content.addWidget(r)
+        self.auto.setChecked(True)
+        self.content.addSpacing(8)
+        self.text(T("Ustawienie zmienisz w dowolnej chwili w Panelu sterowania → Horyzont Updates.",
+                    "You can change this at any time in Control Panel → Horyzont Updates."), 13)
+        self.content.addStretch(1)
+
+    def validate(self):
+        self.app.choices["auto_updates"] = self.auto.isChecked()
+        return True
+
+
+class _Bars(QWidget):
+    def __init__(self, signal, secure):
+        super().__init__()
+        self.signal, self.secure = signal, secure
+        self.setFixedSize(40, 18)
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        n = 1 + min(3, self.signal // 25)
+        for i in range(4):
+            h = 4 + i * 4
+            p.fillRect(QRectF(2 + i * 6, 18 - h, 4, h), QColor("#2f7d32") if i < n else QColor("#b8c2d6"))
+        if self.secure:
+            p.setPen(QPen(QColor("#806020"), 1.4))
+            p.setBrush(Qt.NoBrush)
+            p.drawArc(QRectF(29, 3, 7, 8), 0, 180 * 16)
+            p.fillRect(QRectF(28, 7, 9, 8), QColor("#d9a520"))
+
+
+class NetworkPage(OobePage):
+    can_skip = True
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.set_title(T("Połącz się z Internetem", "Connect to the Internet"))
+        self.status = self.text("", 14)
+        self.hint = self.text(T("Wybierz sieć bezprzewodową z listy, wpisz klucz sieci (hasło) i kliknij Połącz. "
+                                "Możesz też pominąć ten krok i połączyć się później, klikając ikonę sieci na pasku "
+                                "zadań.",
+                                "Select a wireless network, type its network key (password) and click Connect. You "
+                                "can also skip this step and connect later using the network icon on the taskbar."), 13)
+        row = QHBoxLayout()
+        self.list = QListWidget()
+        self.list.setMinimumHeight(150)
+        self.list.setFont(look.font(13))
+        self.list.currentRowChanged.connect(self._sel)
+        row.addWidget(self.list, 3)
+        side = QGridLayout()
+        self.pwlab = QLabel(T("Klucz sieci:", "Network key:"))
+        self.pw = QLineEdit()
+        self.pw.setEchoMode(QLineEdit.Password)
+        self.pw.returnPressed.connect(self.connect_net)
+        self.show_pw = QCheckBox(T("Pokaż znaki", "Show characters"))
+        self.show_pw.toggled.connect(lambda v: self.pw.setEchoMode(QLineEdit.Normal if v else QLineEdit.Password))
+        self.conn = QPushButton(T("&Połącz", "&Connect"))
+        self.conn.clicked.connect(self.connect_net)
+        self.refresh = QPushButton(T("&Odśwież listę", "&Refresh list"))
+        self.refresh.clicked.connect(lambda: self.scan(True))
+        self.hidden = QPushButton(T("Sieć &ukryta...", "&Hidden network..."))
+        self.hidden.clicked.connect(self.hidden_net)
+        side.addWidget(self.pwlab, 0, 0)
+        side.addWidget(self.pw, 1, 0)
+        side.addWidget(self.show_pw, 2, 0)
+        side.addWidget(self.conn, 3, 0)
+        side.addWidget(self.refresh, 5, 0)
+        side.addWidget(self.hidden, 6, 0)
+        side.setRowStretch(4, 1)
+        row.addSpacing(12)
+        row.addLayout(side, 2)
+        self.content.addLayout(row, 1)
+        self.nets = []
+        self.busy_flag = False
+        self.wired = False
+        self.hidden_ssid = None
+        self._poll = QTimer(self)
+        self._poll.timeout.connect(self._update_status)
+
+    def on_enter(self):
+        self._update_status()
+        self._poll.start(3000)
+        if not self.nets:
+            self.scan(True)
+
+    def _update_status(self):
+        def work():
+            dev, wired = tasks.wired_status()
+            on = tasks.online(2)
+            self._st = (dev, wired, on)
+        if getattr(self, "_stth", None) and self._stth.is_alive():
+            return
+        self._stth = threading.Thread(target=work, daemon=True)
+        self._stth.start()
+        QTimer.singleShot(2500, self._show_status)
+
+    def _show_status(self):
+        st = getattr(self, "_st", None)
+        if not st or self.busy_flag:
+            return
+        dev, wired, on = st
+        self.wired = wired
+        self.app.online = on
+        if on and wired:
+            self.status.setText(T("✓  Komputer jest połączony z Internetem przez sieć przewodową (Ethernet). Kliknij "
+                                  "Dalej.", "✓  This computer is connected to the Internet through a wired (Ethernet) "
+                                  "network. Click Next."))
+        elif on:
+            self.status.setText(T("✓  Komputer jest połączony z Internetem. Kliknij Dalej.",
+                                  "✓  This computer is connected to the Internet. Click Next."))
+        elif dev:
+            self.status.setText(T("Kabel sieciowy nie jest podłączony albo sieć przewodowa nie daje dostępu do "
+                                  "Internetu.", "The network cable is unplugged or the wired network has no "
+                                  "Internet access."))
+        else:
+            self.status.setText(T("Komputer nie jest połączony z Internetem.", "This computer is not connected to the "
+                                  "Internet."))
+        self.app.refresh_buttons()
+
+    def scan(self, rescan):
+        self.list.clear()
+        it = QListWidgetItem(T("Wyszukiwanie sieci bezprzewodowych...", "Searching for wireless networks..."))
+        it.setFlags(Qt.NoItemFlags)
+        self.list.addItem(it)
+
+        def work():
+            try:
+                self._found = tasks.wifi_list(rescan)
+            except Exception as e:
+                tasks.log("wifi:", e)
+                self._found = []
+        th = threading.Thread(target=work, daemon=True)
+        th.start()
+
+        def check():
+            if th.is_alive():
+                QTimer.singleShot(300, check)
+                return
+            self.nets = self._found
+            self._fill()
+        QTimer.singleShot(300, check)
+
+    def _fill(self):
+        self.list.clear()
+        if not self.nets:
+            it = QListWidgetItem(T("Nie znaleziono sieci bezprzewodowych.", "No wireless networks were found."))
+            it.setFlags(Qt.NoItemFlags)
+            self.list.addItem(it)
+            self._sel(-1)
+            return
+        for n in self.nets:
+            it = QListWidgetItem("      " + n["ssid"] + (T("   (połączono)", "   (connected)") if n["active"] else ""))
+            self.list.addItem(it)
+            w = QWidget()
+            lay = QHBoxLayout(w)
+            lay.setContentsMargins(4, 0, 4, 0)
+            lay.addStretch(1)
+            lay.addWidget(_Bars(n["signal"], n["secure"]))
+            w.setAttribute(Qt.WA_TransparentForMouseEvents)
+            self.list.setItemWidget(it, w)
+        self.list.setCurrentRow(0)
+
+    def _sel(self, row):
+        n = self.nets[row] if 0 <= row < len(self.nets) else None
+        secure = bool(n and n["secure"])
+        for w in (self.pw, self.pwlab, self.show_pw):
+            w.setEnabled(secure)
+        self.conn.setEnabled(bool(n) and not self.busy_flag)
+
+    def connect_net(self, ssid=None, hidden=False):
+        row = self.list.currentRow()
+        if ssid is None:
+            if not (0 <= row < len(self.nets)):
+                return
+            ssid = self.nets[row]["ssid"]
+        pw = self.pw.text()
+        self.busy_flag = True
+        self.conn.setEnabled(False)
+        self.status.setText(T(f"Łączenie z siecią „{ssid}”...", f"Connecting to \"{ssid}\"..."))
+        self.app.refresh_buttons()
+
+        def work():
+            ok, err = tasks.wifi_connect(ssid, pw, hidden)
+            on = ok and tasks.online(6)
+            self._res = (ok, err, on)
+        th = threading.Thread(target=work, daemon=True)
+        th.start()
+
+        def check():
+            if th.is_alive():
+                QTimer.singleShot(300, check)
+                return
+            ok, err, on = self._res
+            self.busy_flag = False
+            self.conn.setEnabled(True)
+            if ok:
+                self.app.online = on
+                self.status.setText(T(f"✓  Połączono z siecią „{ssid}”.", f"✓  Connected to \"{ssid}\".") +
+                                    ("" if on else T("  (brak dostępu do Internetu)", "  (no Internet access)")))
+                self.pw.clear()
+                self.scan(False)
+            else:
+                low = err.lower()
+                if "secrets" in low or "password" in low or "802-11-wireless-security" in low:
+                    msg = T("Nie udało się połączyć — sprawdź klucz sieci.", "Could not connect — check the network key.")
+                else:
+                    msg = T("Nie udało się połączyć z siecią.", "Could not connect to the network.")
+                self.status.setText("✗  " + msg)
+            self.app.refresh_buttons()
+        QTimer.singleShot(300, check)
+
+    def hidden_net(self):
+        from ..ui.classic import classic_dialog
+        e = QLineEdit()
+
+        def build(lay, frame):
+            lay.addWidget(QLabel(T("Nazwa sieci (SSID):", "Network name (SSID):"), styleSheet="color:black"))
+            lay.addWidget(e)
+        if classic_dialog(self, T("Połącz z siecią ukrytą", "Connect to a hidden network"), build) and e.text().strip():
+            self.connect_net(e.text().strip(), True)
+
+    def busy(self):
+        return self.busy_flag
+
+    def validate(self):
+        self._poll.stop()
+        return True
+
+
+class ThirdPartyPage(OobePage):
+    def __init__(self, app):
+        super().__init__(app)
+        self.set_title(T("Repozytoria oprogramowania firm trzecich", "Third-party software repositories"))
+        self.text(T("Repozytoria firm trzecich dają dostęp do dodatkowych programów, których nie ma w Fedorze — "
+                    "np. przeglądarki Google Chrome, sterowników NVIDIA, Steam, kodeków multimedialnych i aplikacji "
+                    "Flatpak. Część z nich nie jest wolnym oprogramowaniem.",
+                    "Third-party repositories give access to additional software that is not part of Fedora — "
+                    "e.g. Google Chrome, NVIDIA drivers, Steam, multimedia codecs and Flatpak apps. Some of it is "
+                    "not free software."))
+        self.enable = QCheckBox(T("&Włącz repozytoria oprogramowania firm trzecich", "&Enable third-party software "
+                                  "repositories"))
+        self.enable.setFont(look.font(14, True))
+        self.content.addWidget(self.enable)
+        self.subs = []
+        for key, pl, en in (
+                ("fedora", "Repozytoria firm trzecich udostępniane przez Fedorę (Google Chrome, sterowniki NVIDIA, Steam)",
+                 "Third-party repositories provided by Fedora (Google Chrome, NVIDIA drivers, Steam)"),
+                ("rpmfusion", "RPM Fusion (darmowe i niewolne pakiety) — wymaga Internetu",
+                 "RPM Fusion (free and nonfree packages) — needs the Internet"),
+                ("codecs", "Pełne kodeki multimedialne (MP4, H.264, AAC…) z RPM Fusion — wymaga Internetu",
+                 "Full multimedia codecs (MP4, H.264, AAC…) from RPM Fusion — needs the Internet"),
+                ("flathub", "Flathub — sklep z aplikacjami Flatpak", "Flathub — the Flatpak app store")):
+            cb = QCheckBox(T(pl, en))
+            cb.key = key
+            cb.setChecked(True)
+            cb.setFont(look.font(13))
+            row = QHBoxLayout()
+            row.addSpacing(28)
+            row.addWidget(cb)
+            row.addStretch(1)
+            self.content.addLayout(row)
+            self.subs.append(cb)
+        self.nv = self.text("", 13, color="#fff2b0")
+        self.enable.toggled.connect(self._en)
+        self.enable.setChecked(False)
+        self._en(False)
+        self.content.addStretch(1)
+        self.text(T("Możesz je włączyć lub wyłączyć później.", "You can enable or disable them later."), 13)
+
+    def _en(self, v):
+        for cb in self.subs:
+            needs_net = cb.key in ("rpmfusion", "codecs")
+            cb.setEnabled(v and (self.app.online or not needs_net))
+            if needs_net and not self.app.online:
+                cb.setChecked(False)
+
+    def on_enter(self):
+        self._en(self.enable.isChecked())
+        hw = tasks.read_json(os.path.join(tasks.STATE, "hardware.json"))
+        if hw.get("nvidia"):
+            self.nv.setText(T("Wykryto kartę graficzną NVIDIA. Sterownik firmy NVIDIA zainstalujesz po włączeniu "
+                              "repozytoriów (Dodaj lub usuń programy → akmod-nvidia).",
+                              "An NVIDIA graphics card was detected. You can install the NVIDIA driver after enabling "
+                              "the repositories (Add or Remove Programs → akmod-nvidia)."))
+
+    def validate(self):
+        on = self.enable.isChecked()
+        self.app.choices["third_party"] = {cb.key: (on and cb.isChecked() and cb.isEnabled()) for cb in self.subs}
+        return True
+
+
+class UpdatePage(OobePage):
+    can_skip = True
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.set_title(T("Aktualizacja systemu", "Update your computer"))
+        self.intro = self.text(T("Komputer jest połączony z Internetem. Instalator może teraz pobrać i zainstalować "
+                                 "najnowsze aktualizacje. Może to potrwać od kilku do kilkudziesięciu minut, zależnie od "
+                                 "szybkości połączenia. Kliknij Dalej, aby rozpocząć, albo Pomiń, aby zrobić to później.",
+                                 "This computer is connected to the Internet. Setup can now download and install the "
+                                 "latest updates. This may take from a few minutes to over half an hour depending on "
+                                 "your connection. Click Next to start, or Skip to do it later."), 14)
+        self.rows = {}
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+        self.items = [("repos", T("Repozytoria firm trzecich", "Third-party repositories")),
+                      ("system", T("System Fedora i programy", "Fedora system and programs")),
+                      ("desktop", T("Horyzont Desktop (pulpit)", "Horyzont Desktop")),
+                      ("logon", T("Horyzont Logon (ekran powitalny)", "Horyzont Logon (welcome screen)"))]
+        for i, (k, name) in enumerate(self.items):
+            mark = QLabel("•")
+            mark.setFixedWidth(22)
+            mark.setFont(look.font(16, True))
+            lab = QLabel(name)
+            lab.setFont(look.font(14, True))
+            st = QLabel("")
+            st.setFont(look.font(13))
+            grid.addWidget(mark, i, 0)
+            grid.addWidget(lab, i, 1)
+            grid.addWidget(st, i, 2)
+            self.rows[k] = (mark, lab, st)
+        grid.setColumnStretch(2, 1)
+        self.content.addSpacing(6)
+        self.content.addLayout(grid)
+        self.content.addSpacing(10)
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 1000)
+        self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(18)
+        self.bar.setStyleSheet("QProgressBar { background: white; border: 1px solid #1d3f8a; }"
+                               "QProgressBar::chunk { background: #3a9a3a; width: 8px; margin: 1px; }")
+        self.content.addWidget(self.bar)
+        self.detail = self.text("", 12, color="#dfe8ff")
+        self.content.addStretch(1)
+        self.state = "ready"         # ready → running → done
+        self.bar.hide()
+
+    def skip(self):
+        return not self.app.online
+
+    def on_enter(self):
+        tp = self.app.choices.get("third_party", {})
+        self.need_repos = any(tp.values()) if tp else False
+        self.rows["repos"][0].setVisible(self.need_repos)
+        self.rows["repos"][1].setVisible(self.need_repos)
+        self.rows["repos"][2].setVisible(self.need_repos)
+
+    def busy(self):
+        return self.state == "running"
+
+    def validate(self):
+        if self.state == "done":
+            return True
+        if self.state == "ready":
+            self.start()
+        return False
+
+    def _set(self, key, status, mark=None, color="#ffffff"):
+        m, l, s = self.rows[key]
+        s.setText(status)
+        if mark:
+            m.setText(mark)
+        m.setStyleSheet(f"color: {color};")
+
+    def start(self):
+        self.state = "running"
+        self.app.refresh_buttons()
+        self.bar.show()
+        self.intro.setText(T("Trwa pobieranie i instalowanie aktualizacji. Nie wyłączaj komputera.",
+                             "Downloading and installing updates. Do not turn off your computer."))
+        self.prog = 0.0
+        self.line = ""
+        self.results = {}
+        th = threading.Thread(target=self._work, daemon=True)
+        th.start()
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(200)
+
+    def _work(self):
+        import re
+        tp = self.app.choices.get("third_party", {})
+        steps = (["repos"] if self.need_repos else []) + ["system", "desktop", "logon"]
+        span = 1.0 / len(steps)
+        for si, key in enumerate(steps):
+            base = si * span
+            self.cur = key
+            self.prog = base
+            try:
+                if key == "repos":
+                    def ol(l):
+                        self.line = l
+                    errs = tasks.enable_third_party(tp.get("fedora"), tp.get("rpmfusion"), tp.get("flathub"),
+                                                    tp.get("codecs"), ol)
+                    self.results[key] = (not errs, ", ".join(errs))
+                elif key == "system":
+                    def ol(l):
+                        self.line = l
+                        m = re.search(r"\[\s*(\d+)\s*/\s*(\d+)\s*\]", l)
+                        if m and int(m.group(2)) > 0:
+                            self.prog = base + span * int(m.group(1)) / int(m.group(2))
+                    rc = tasks.run_stream(["dnf", "upgrade", "-y", "--refresh"], ol)
+                    self.results[key] = (rc == 0, "")
+                else:
+                    ups = getattr(self, "_hups", None)
+                    if ups is None:
+                        self.line = T("Sprawdzanie dostępnych wersji w serwisie GitHub...",
+                                      "Checking for new versions on GitHub...")
+                        ups = self._hups = tasks.horyzont_updates()
+                    want = "Desktop" if key == "desktop" else "Logon"
+                    mine = [(n, u) for n, u in ups if (want in n) or (key == "logon" and ("powitalny" in n.lower() or
+                                                                                         "welcome" in n.lower() or
+                                                                                         "greeter" in n.lower()))]
+                    if not mine:
+                        self.results[key] = (True, "latest")
+                    else:
+                        n, u = mine[0]
+                        self.line = T("Pobieranie: ", "Downloading: ") + n
+
+                        def pr(f):
+                            self.prog = base + span * 0.6 * f
+
+                        def ol(l):
+                            self.line = l
+                        ok = tasks.install_horyzont_update(u, pr, ol)
+                        self.results[key] = (ok, getattr(u, "new", "") if u else "")
+            except Exception as e:
+                tasks.log("aktualizacja", key, e)
+                self.results[key] = (False, str(e))
+        self.prog = 1.0
+        self.cur = None
+
+    def _tick(self):
+        self.bar.setValue(int(self.prog * 1000))
+        self.detail.setText(self.line[:110])
+        for key, _ in self.items:
+            if key in self.results:
+                ok, info = self.results[key]
+                if ok:
+                    txt = T("aktualne", "up to date") if info == "latest" else (
+                        T("zaktualizowano", "updated") + (f" ({info})" if info and info != "latest" else ""))
+                    self._set(key, txt, "✓", "#b9ffa8")
+                else:
+                    self._set(key, T("nie udało się — spróbujesz później w Horyzont Updates",
+                                     "failed — you can retry later in Horyzont Updates"), "✗", "#ffb3a8")
+            elif getattr(self, "cur", None) == key:
+                self._set(key, T("w toku...", "in progress..."), "►", "#ffd27a")
+        if getattr(self, "cur", 1) is None and self.prog >= 1.0 and self.state == "running":
+            self.state = "done"
+            self._timer.stop()
+            self.intro.setText(T("Aktualizacja zakończona. Kliknij Dalej.", "Updates finished. Click Next."))
+            self.detail.setText("")
+            self.app.refresh_buttons()
+
+
+class UsersPage(OobePage):
+    def __init__(self, app):
+        super().__init__(app)
+        self.set_title(T("Kto będzie używać tego komputera?", "Who will use this computer?"))
+        self.text(T("Wpisz imię każdej osoby, która będzie używać tego komputera. System HoryzontOS utworzy osobne "
+                    "konto dla każdej z nich, aby każdy miał własny pulpit, dokumenty i ustawienia.",
+                    "Type the name of each person who will use this computer. HoryzontOS will create a separate "
+                    "account for each person so everyone gets their own desktop, documents and settings."), 14)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(6)
+        self.fields = []
+        labels = [T("&Twoje imię:", "&Your name:"), T("&Drugi użytkownik:", "&2nd User:"),
+                  T("T&rzeci użytkownik:", "&3rd User:"), T("&Czwarty użytkownik:", "&4th User:"),
+                  T("&Piąty użytkownik:", "&5th User:")]
+        for i, t in enumerate(labels):
+            lab = QLabel(t)
+            lab.setFont(look.font(14, i == 0))
+            e = QLineEdit()
+            e.setMaxLength(40)
+            e.setFixedWidth(260)
+            e.setFont(look.font(13))
+            lab.setBuddy(e)
+            grid.addWidget(lab, i, 0)
+            grid.addWidget(e, i, 1)
+            self.fields.append(e)
+        grid.setColumnStretch(2, 1)
+        self.content.addLayout(grid)
+        self.setpw = QCheckBox(T("&Ustaw hasło dla mojego konta (zalecane, gdy z komputera korzysta wiele osób)",
+                                 "&Set a password for my account (recommended if several people use the computer)"))
+        self.setpw.setFont(look.font(13))
+        self.content.addWidget(self.setpw)
+        pg = QGridLayout()
+        pg.setHorizontalSpacing(14)
+        self.pw1, self.pw2 = QLineEdit(), QLineEdit()
+        for i, (t, e) in enumerate(((T("Hasło:", "Password:"), self.pw1), (T("Potwierdź hasło:", "Confirm:"), self.pw2))):
+            e.setEchoMode(QLineEdit.Password)
+            e.setFixedWidth(200)
+            lab = QLabel(t)
+            lab.setFont(look.font(13))
+            pg.addWidget(lab, 0, i * 2)
+            pg.addWidget(e, 0, i * 2 + 1)
+            e.setEnabled(False)
+        pg.setColumnStretch(4, 1)
+        pg.setContentsMargins(28, 0, 0, 0)
+        self.content.addLayout(pg)
+        self.setpw.toggled.connect(lambda v: [e.setEnabled(v) for e in (self.pw1, self.pw2)])
+        self.content.addStretch(1)
+        self.text(T("Imiona będą widoczne na ekranie powitalnym w kolejności alfabetycznej. Pierwsze konto ma "
+                    "uprawnienia administratora. Hasła dla pozostałych kont ustawisz później w Panelu sterowania → "
+                    "Konta użytkowników.",
+                    "Names appear on the welcome screen in alphabetical order. The first account is an "
+                    "administrator. Set passwords for other accounts later in Control Panel → User Accounts."), 12)
+
+    def on_enter(self):
+        s = tasks.load_settings().get("setup", {})
+        if not self.fields[0].text() and s.get("owner"):
+            self.fields[0].setText(s["owner"])
+        self.fields[0].setFocus()
+
+    def _warn(self, text):
+        from ..ui.classic import message
+        message(self, T("Kto będzie używać tego komputera?", "Who will use this computer?"), text)
+
+    def validate(self):
+        names = [e.text().strip() for e in self.fields]
+        if not names[0]:
+            self._warn(T("Musisz wpisać przynajmniej jedno imię, aby kontynuować.",
+                         "You must type at least one name to continue."))
+            self.fields[0].setFocus()
+            return False
+        seen = set()
+        for n in names:
+            if not n:
+                continue
+            if n.lower() in seen:
+                self._warn(T(f"Imię „{n}” wpisano więcej niż raz. Każde konto musi mieć inną nazwę.",
+                             f"The name \"{n}\" was typed more than once. Each account must have a different name."))
+                return False
+            if any(c in n for c in ":,\n"):
+                self._warn(T("Imię nie może zawierać znaków : ani ,", "A name cannot contain : or ,"))
+                return False
+            seen.add(n.lower())
+        pw = ""
+        if self.setpw.isChecked():
+            if self.pw1.text() != self.pw2.text():
+                self._warn(T("Wpisane hasła nie są zgodne.", "The passwords do not match."))
+                return False
+            pw = self.pw1.text()
+        users = [{"name": n, "password": pw if i == 0 else ""} for i, n in enumerate(names) if n]
+        self.app.choices["users"] = users
+        return True
+
+
+class FinishPage(OobePage):
+    show_back = True
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.next_text = T("&Zakończ", "&Finish")
+        self.set_title(T("Dziękujemy!", "Thank you!"))
+        self.text(T("Gotowe! Komputer jest przygotowany do pracy z systemem HoryzontOS.",
+                    "Congratulations! Your computer is ready to use HoryzontOS."), 16)
+        self.summary = self.text("", 14)
+        self.content.addStretch(1)
+        self.text(T("Aby zakończyć konfigurację i przejść do ekranu powitalnego, kliknij przycisk Zakończ.",
+                    "To finish setup and go to the welcome screen, click Finish."))
+
+    def on_enter(self):
+        c = self.app.choices
+        lines = []
+        users = c.get("users", [])
+        if users:
+            lines.append(T("Konta: ", "Accounts: ") + ", ".join(u["name"] for u in users))
+        lines.append(T("Aktualizacje automatyczne: ", "Automatic Updates: ") +
+                     (T("włączone", "on") if c.get("auto_updates", True) else T("tylko powiadomienia", "notify only")))
+        tp = c.get("third_party", {})
+        lines.append(T("Repozytoria firm trzecich: ", "Third-party repositories: ") +
+                     (T("włączone", "enabled") if any(tp.values()) else T("wyłączone", "disabled")))
+        lines.append(T("Internet: ", "Internet: ") + (T("połączono", "connected") if self.app.online else
+                                                     T("bez połączenia", "not connected")))
+        self.summary.setText("\n".join("  •  " + l for l in lines))

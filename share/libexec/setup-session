@@ -1,0 +1,60 @@
+#!/bin/bash
+# Graficzna część instalatora i pierwsze uruchomienie HoryzontOS (horyzontos-setup.service, tty1).
+# Uruchamia kompozytor labwc z jednym oknem pełnoekranowym; po zakończeniu konfiguracji
+# włącza ekran powitalny.
+export PYTHONPATH=/usr/share/horyzontos
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/0}"
+mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+. /etc/locale.conf 2>/dev/null
+export LANG="${LANG:-pl_PL.UTF-8}"
+CFG="$XDG_RUNTIME_DIR/horyzontos-labwc"
+mkdir -p "$CFG"
+cat > "$CFG/rc.xml" <<'XML'
+<?xml version="1.0"?>
+<labwc_config>
+  <core><decoration>server</decoration><gap>0</gap></core>
+  <placement><policy>center</policy></placement>
+  <theme><name></name><cornerRadius>0</cornerRadius></theme>
+  <keyboard><default /><keybind key="A-F4"><action name="None" /></keybind></keyboard>
+  <mouse><default /></mouse>
+  <windowRules>
+    <windowRule identifier="horyzontos-setup" serverDecoration="no" />
+  </windowRules>
+</labwc_config>
+XML
+echo '<?xml version="1.0"?><openbox_menu></openbox_menu>' > "$CFG/menu.xml"
+{
+    KB="$(sed -n 's/^XKBLAYOUT="\?\([^"]*\)"\?/\1/p' /etc/vconsole.conf)"
+    VAR="$(sed -n 's/^XKBVARIANT="\?\([^"]*\)"\?/\1/p' /etc/vconsole.conf)"
+    echo "XKB_DEFAULT_LAYOUT=${KB:-pl}"
+    [ -n "$VAR" ] && echo "XKB_DEFAULT_VARIANT=$VAR"
+    echo "XCURSOR_SIZE=24"
+} > "$CFG/environment"
+cat > "$CFG/inner" <<'SH'
+#!/bin/bash
+# skala interfejsu: projekt ma 800×600 punktów — na większych ekranach powiększamy
+W=0; H=0
+if command -v wlr-randr >/dev/null; then
+    read -r W H < <(wlr-randr --json 2>/dev/null | python3 -c 'import json,sys
+d=json.load(sys.stdin)
+for o in d:
+    for m in o.get("modes",[]):
+        if m.get("current"):
+            print(m["width"], m["height"]); raise SystemExit' 2>/dev/null)
+fi
+if [ "${W:-0}" -gt 0 ]; then
+    export QT_SCALE_FACTOR="$(python3 -c "s=min($W/800,$H/600); print(max(1.0, round(s*4)/4))")"
+fi
+export QT_QPA_PLATFORM=wayland
+export QT_WAYLAND_DISABLE_WINDOWDECORATION=1
+python3 -P -m horyzontos setup
+echo $? > "$XDG_RUNTIME_DIR/horyzontos-setup.rc"
+labwc --exit
+SH
+chmod 755 "$CFG/inner"
+labwc -C "$CFG" -s "$CFG/inner" >>/var/log/horyzontos-labwc.log 2>&1
+if [ ! -f /var/lib/horyzontos/stage ]; then
+    # konfiguracja zakończona — ekran powitalny (albo automatyczne logowanie)
+    systemctl --no-block start display-manager.service
+fi
+exit 0
