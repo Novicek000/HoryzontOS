@@ -1,6 +1,6 @@
 # HoryzontOS
 
-System operacyjny oparty na **Fedora Linux 43** z pulpitem [Horyzont Desktop](https://github.com/Novicek000/HoryzontDesktop)
+System operacyjny oparty na **Fedora Linux 44** z pulpitem [Horyzont Desktop](https://github.com/Novicek000/HoryzontDesktop)
 i ekranem powitalnym [Horyzont Logon](https://github.com/Novicek000/HoryzontLogon) — w układzie i stylu pracy
 klasycznego pulpitu z początku lat 2000. Instalator działa i wygląda jak klasyczny instalator systemu z tamtych lat.
 Cała grafika, teksty i dźwięki są narysowane / napisane od nowa.
