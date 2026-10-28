@@ -138,6 +138,12 @@ stage_configure() {
     [ -x "$ROOT/usr/bin/bash" ] || die "Brak systemu plików — najpierw etap rootfs."
     mount_chroot
     cp /etc/resolv.conf "$ROOT/etc/resolv.conf.build" 2>/dev/null || true
+    # DNS w chroot (pobieranie z Flathuba i GitHuba): /etc/resolv.conf w Fedorze wskazuje na /run (tmpfs na czas
+    # budowania) — tam trafia kopia ustawień hosta; plik w obrazie zostaje dowiązaniem
+    if [ -L "$ROOT/etc/resolv.conf" ]; then
+        mkdir -p "$ROOT/run/systemd/resolve"
+        cp -L /etc/resolv.conf "$ROOT/run/systemd/resolve/stub-resolv.conf" 2>/dev/null || true
+    fi
 
     # przy budowaniu za serwerem proxy: dnf w chroot korzysta z certyfikatów i proxy hosta (tylko na czas instalacji)
     if [ -n "${HTTPS_PROXY:-}" ]; then
