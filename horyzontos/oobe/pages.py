@@ -558,11 +558,12 @@ class NetworkPage(OobePage):
         self.pwlab = QLabel(T("Klucz sieci:", "Network key:"))
         self.pw = QLineEdit()
         self.pw.setEchoMode(QLineEdit.Password)
-        self.pw.returnPressed.connect(self.connect_net)
+        self.pw.returnPressed.connect(lambda: self.connect_net())
         self.show_pw = QCheckBox(T("Pokaż znaki", "Show characters"))
         self.show_pw.toggled.connect(lambda v: self.pw.setEchoMode(QLineEdit.Normal if v else QLineEdit.Password))
         self.conn = QPushButton(T("&Połącz", "&Connect"))
-        self.conn.clicked.connect(self.connect_net)
+        # clicked przekazuje stan przycisku (False) — nie może trafić do parametru ssid
+        self.conn.clicked.connect(lambda: self.connect_net())
         self.refresh = QPushButton(T("&Odśwież listę", "&Refresh list"))
         self.refresh.clicked.connect(lambda: self.scan(True))
         self.hidden = QPushButton(T("Sieć &ukryta...", "&Hidden network..."))
@@ -676,6 +677,8 @@ class NetworkPage(OobePage):
 
     def connect_net(self, ssid=None, hidden=False):
         row = self.list.currentRow()
+        if not isinstance(ssid, str) or not ssid:
+            ssid = None
         if ssid is None:
             if not (0 <= row < len(self.nets)):
                 return
