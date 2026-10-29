@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       fedora:
-        description: "Wersja Fedory (np. 43, 44)"
-        required: true
-        default: "43"
+        description: "Wersja Fedory (np. 44, 45; puste = z pliku FEDORA_VERSION)"
+        required: false
+        default: ""
       version:
         description: "Numer wersji HoryzontOS (np. 1.1.0; puste = z pliku VERSION)"
         required: false
