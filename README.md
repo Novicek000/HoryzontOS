@@ -11,8 +11,8 @@ classic early-2000s setup program (blue text-mode phase, graphical phase, first-
 ## Jak przebiega instalacja
 
 1. **Menu płyty** (GRUB, niebieskie tło): *Zainstaluj system HoryzontOS* / *Install HoryzontOS (English)* /
-   sprawdzenie nośnika / tryb podstawowej grafiki. Gdy na dysku jest już HoryzontOS, płyta pyta jak klasyczna:
-   *Naciśnij dowolny klawisz, aby uruchomić komputer z dysku CD lub DVD...* — bez klawisza startuje system z dysku.
+   sprawdzenie nośnika / tryb podstawowej grafiki. Gdy na dysku jest już HoryzontOS, w menu jest też
+   *Uruchom system z dysku twardego*.
 2. **Część tekstowa** — niebieski ekran 80×30 znaków z czcionką VGA, szary pasek stanu na dole:
    powitanie (ENTER / R = Konsola odzyskiwania / F3), umowa licencyjna (F8), lista dysków i partycji
    (ENTER instaluj, C utwórz, D usuń + L potwierdź), wybór systemu plików (Btrfs / ext4 / XFS, szybkie lub pełne
@@ -47,12 +47,14 @@ Inna wersja Fedory / numer wersji: `RELEASEVER=44 HORYZONTOS_VERSION=1.1.0 sudo 
 **GitHub Actions:** zakładka *Actions → Zbuduj ISO → Run workflow* buduje obraz i udostępnia go jako artefakt
 (przechowywany 14 dni). W oknie *Run workflow* są pola:
 - **Wersja Fedory** (np. `43`, `44`, `rawhide`; domyślnie z pliku `FEDORA_VERSION`),
-- **Numer wersji HoryzontOS** (np. `1.1.0`; puste = z pliku `VERSION`) — trafia do nazwy ISO, menu płyty i systemu.
+- **Numer wersji HoryzontOS** (np. `1.1.0`; puste = z pliku `VERSION`) — trafia do nazwy ISO, menu płyty i systemu,
+- **Dołącz ISO do istniejącego wydania** (tag, np. `v1.0.0`) — buduje z gałęzi `main` i podmienia ISO w tym wydaniu.
 
 Horyzont Desktop i Horyzont Logon są zawsze pobierane w najnowszej wersji (gałąź `main`), a pakiety Fedory
 ze wszystkimi aktualizacjami z dnia budowania. Przy wydaniu (Release) numer wersji bierze się z tagu (`v1.1.0` → `1.1.0`).
-Opublikowanie wydania (Release) dołącza ISO do wydania (pliki > 2 GB są dzielone na części:
-`cat HoryzontOS-*.iso.part* > HoryzontOS.iso`).
+Opublikowanie wydania (Release) dołącza ISO do wydania. **Wydanie buduje kod z commitu, na który wskazuje tag** —
+przy nowym wydaniu twórz nowy tag (np. `v1.0.1`) z gałęzi `main`, nie wybieraj starego tagu.
+Obraz ≥ 2 GiB (limit GitHuba) byłby podzielony na części: `cat HoryzontOS-*.iso.part* > HoryzontOS.iso`.
 
 Nagrywanie na pendrive: `sudo dd if=HoryzontOS-1.0.0-x86_64.iso of=/dev/sdX bs=4M status=progress oflag=sync`
 (albo Fedora Media Writer / Ventoy / Rufus w trybie DD). Obraz uruchamia się w trybie BIOS i UEFI (także z Secure Boot).
