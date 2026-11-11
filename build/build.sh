@@ -279,13 +279,15 @@ stage_squash() {
     mkdir -p "$ISO/LiveOS"
     rm -f "$ISO/LiveOS/squashfs.img"
     mksquashfs "$ROOT" "$ISO/LiveOS/squashfs.img" -comp zstd -Xcompression-level "${SQUASH_LEVEL:-19}" -b 1M \
-        -noappend -xattrs -e proc sys dev run tmp -quiet -progress >/dev/null
+        -noappend -no-sparse -no-fragments -xattrs -e proc sys dev run tmp -quiet -progress >/dev/null
     cp "$WORK/filecount" "$ISO/LiveOS/filecount"
     du -sb --exclude=proc --exclude=sys --exclude=dev "$ROOT" | cut -f1 > "$ISO/LiveOS/rootsize"
     du -sh "$ISO/LiveOS/squashfs.img"
 }
 
 stage_iso() {
+    say "Pełna kontrola odczytu i sum plików SquashFS"
+    bash "$SRC/build/verify-squashfs.sh" "$ISO/LiveOS/squashfs.img" "$ROOT"
     local kver; kver="$(cat "$WORK/kver")"
     say "Pliki startowe płyty (BIOS + UEFI)"
     rm -rf "$ISO/EFI" "$ISO/boot" "$ISO/images"
@@ -343,6 +345,16 @@ stage_iso() {
         -eltorito-alt-boot -e images/efiboot.img -no-emul-boot \
         -append_partition 2 0xef "$ISO/images/efiboot.img" -appended_part_as_gpt \
         -graft-points "$ISO" 2>&1 | grep -v "^xorriso : UPDATE" | tail -3
+    say "Kontrola obrazu systemu zapisanego w ISO"
+    local embedded="$WORK/iso-squashfs-check.img"
+    rm -f "$embedded"
+    if ! xorriso -osirrox on -indev "$OUT/$ISONAME" \
+        -extract /LiveOS/squashfs.img "$embedded" > "$WORK/iso-verify.log" 2>&1; then
+        cat "$WORK/iso-verify.log" >&2
+        die "Nie można odczytać SquashFS z gotowego ISO."
+    fi
+    cmp -s "$ISO/LiveOS/squashfs.img" "$embedded" || die "SquashFS w ISO został uszkodzony."
+    rm -f "$embedded" "$WORK/iso-verify.log"
     (cd "$OUT" && sha256sum "$ISONAME" > "$ISONAME.sha256")
     ls -lh "$OUT/$ISONAME"
 }
