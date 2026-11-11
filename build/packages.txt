@@ -28,6 +28,8 @@ sudo
 passwd
 shadow-utils
 util-linux
+coreutils
+procps-ng
 bash-completion
 nano
 vim-minimal

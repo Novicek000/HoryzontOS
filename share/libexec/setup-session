@@ -2,6 +2,7 @@
 # Graficzna część instalatora i pierwsze uruchomienie HoryzontOS (horyzontos-setup.service, tty1).
 # Uruchamia kompozytor labwc z jednym oknem pełnoekranowym; po zakończeniu konfiguracji
 # włącza ekran powitalny.
+/usr/libexec/horyzontos/stop-plymouth
 export PYTHONPATH=/usr/share/horyzontos
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/0}"
 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
@@ -74,11 +75,16 @@ start_audio() {
       done
       wpctl set-mute @DEFAULT_AUDIO_SINK@ 0; wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.7 ) >>$log 2>&1 &
 }
+rm -f "$XDG_RUNTIME_DIR/horyzontos-setup.rc"
 start_audio
 labwc -C "$CFG" -s "$CFG/inner" >>/var/log/horyzontos-labwc.log 2>&1
+rc=$?
+if [ "$rc" -eq 0 ] && [ -f "$XDG_RUNTIME_DIR/horyzontos-setup.rc" ]; then
+    rc="$(cat "$XDG_RUNTIME_DIR/horyzontos-setup.rc")"
+fi
 [ -n "$AUDIO_PIDS" ] && kill $AUDIO_PIDS 2>/dev/null
 if [ ! -f /var/lib/horyzontos/stage ]; then
     # konfiguracja zakończona — ekran powitalny (albo automatyczne logowanie)
     systemctl --no-block start display-manager.service
 fi
-exit 0
+exit "$rc"

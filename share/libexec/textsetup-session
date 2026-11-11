@@ -8,7 +8,7 @@ setterm --blank 0 --powerdown 0 </dev/tty1 >/dev/tty1 2>/dev/null
 LANGARG="$(sed -n 's/.*horyzontos\.lang=\([a-z]*\).*/\1/p' /proc/cmdline)"
 LOG=/tmp/horyzontos-install.log
 console() {
-    plymouth quit 2>/dev/null
+    /usr/libexec/horyzontos/stop-plymouth
     chvt 1 2>/dev/null
     # program graficzny mógł zostawić terminal w trybie graficznym i z wyłączoną klawiaturą
     kbd_mode -u -C /dev/tty1 2>/dev/null
@@ -66,12 +66,9 @@ pick_card() {
 RCF=/run/horyzontos-textsetup.rc
 fails=0
 while true; do
-    # plymouth musi oddać kartę grafiki (DRM master), zanim Qt ustawi tryb ekranu; obraz ekranu ładowania
-    # zostaje (--retain-splash) do pierwszej klatki Instalatora
-    if plymouth --ping 2>/dev/null; then
-        plymouth quit --retain-splash --wait 2>/dev/null || plymouth quit --retain-splash 2>/dev/null
-        for i in 1 2 3 4 5 6 7 8 9 10; do plymouth --ping 2>/dev/null || break; sleep 0.3; done
-    fi
+    # Nie zostawiaj zachowanego ekranu ładowania, jeśli start Qt się nie powiedzie.
+    /usr/libexec/horyzontos/stop-plymouth
+    chvt 1 2>/dev/null
     card="$(pick_card)"
     say "textsetup: start, DRM: $(drm_state) -> ${card:-?}"
     if [ -n "$card" ] && [ "$card" != /dev/dri/card0 ]; then
@@ -102,7 +99,7 @@ while true; do
              # bez ekranu plymouth przy zamykaniu (motyw instalatora pokazuje „Instalator ładuje pliki”)
              systemctl mask --runtime plymouth-reboot.service plymouth-poweroff.service plymouth-halt.service \
                  >/dev/null 2>&1
-             plymouth quit 2>/dev/null
+             /usr/libexec/horyzontos/stop-plymouth
              systemctl reboot; exit 0;;
         10) console;;
         *)  echo "Instalator zakończył się błędem (kod $rc). Dziennik: /tmp/horyzontos-install.log" >/dev/tty1

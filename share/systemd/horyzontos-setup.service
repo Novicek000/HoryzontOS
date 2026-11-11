@@ -1,7 +1,7 @@
 [Unit]
 Description=Konfiguracja systemu HoryzontOS (instalator graficzny i pierwsze uruchomienie)
 Documentation=https://github.com/Novicek000/HoryzontOS
-After=systemd-user-sessions.service plymouth-quit-wait.service systemd-logind.service NetworkManager.service accounts-daemon.service
+After=systemd-user-sessions.service systemd-logind.service NetworkManager.service accounts-daemon.service
 Wants=NetworkManager.service
 Conflicts=getty@tty1.service
 ConditionPathExists=/var/lib/horyzontos/stage
