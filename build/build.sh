@@ -110,10 +110,19 @@ install_horyzontos_files() {
     cp -r "$SRC/share/licenses" "$ROOT/usr/share/horyzontos/" 2>/dev/null || true
     install -m755 "$SRC"/share/libexec/* "$ROOT/usr/libexec/horyzontos/"
     install -m644 "$SRC"/share/systemd/* "$ROOT/usr/lib/systemd/system/"
+    # Fedora 45 używa również kmscon; samo Conflicts=getty@tty1 nie chroni ekranu.
+    for console_unit in getty@tty1.service autovt@tty1.service kmsconvt@tty1.service; do
+        install -Dm644 "$SRC/share/console-setup.conf" \
+            "$ROOT/usr/lib/systemd/system/$console_unit.d/50-horyzontos-setup.conf"
+    done
     install -m755 "$SRC/share/bin/horyzontos-setup" "$ROOT/usr/bin/horyzontos-setup"
     mkdir -p "$ROOT/usr/share/sounds/horyzontos"
     cp "$SRC"/share/sounds/* "$ROOT/usr/share/sounds/horyzontos/" 2>/dev/null || true
     in_root python3 -m compileall -q /usr/share/horyzontos >/dev/null || true
+
+    # Brak pam_systemd cicho pomija rejestrację sesji w logind i blokuje labwc.
+    [ -f "$ROOT/usr/lib64/security/pam_systemd.so" ] || die "Brak systemd-pam (pam_systemd.so)."
+    [ -x "$ROOT/usr/bin/dbus-run-session" ] || die "Brak dbus-daemon (dbus-run-session)."
 
     # fastfetch: logo HoryzontOS; os-release z nazwą HoryzontOS (odnawiany przy starcie przez usługę)
     install -Dm644 "$SRC/share/fastfetch/config.jsonc" "$ROOT/etc/xdg/fastfetch/config.jsonc"

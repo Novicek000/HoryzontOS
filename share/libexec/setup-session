@@ -2,6 +2,10 @@
 # Graficzna część instalatora i pierwsze uruchomienie HoryzontOS (horyzontos-setup.service, tty1).
 # Uruchamia kompozytor labwc z jednym oknem pełnoekranowym; po zakończeniu konfiguracji
 # włącza ekran powitalny.
+# Konfigurator i dźwięk potrzebują własnej magistrali sesji również dla root.
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+    exec dbus-run-session -- "$0" "$@"
+fi
 /usr/libexec/horyzontos/stop-plymouth
 export PYTHONPATH=/usr/share/horyzontos
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/0}"

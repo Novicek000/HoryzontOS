@@ -3,6 +3,9 @@
 
 # --- podstawa
 @core
+# Wymagane także przy install_weak_deps=False: sesja logind i magistrala użytkownika.
+systemd-pam
+dbus-daemon
 fedora-release-identity-basic
 kernel
 kernel-modules
