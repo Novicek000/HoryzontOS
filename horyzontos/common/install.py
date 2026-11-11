@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 
 from . import disks
@@ -123,21 +124,32 @@ def copy_system(progress, cancelled=lambda: False):
             "--exclude=/tmp/*", "--exclude=/boot/efi", "--exclude=/mnt/*", "--exclude=/media/*",
             src, SYSIMAGE + "/"]
     log("$", " ".join(args))
-    p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
-                         errors="replace")
-    n = 0
-    last = 0.0
-    for line in p.stdout:
-        n += 1
-        now = time.monotonic()
-        if now - last > 0.05:
-            last = now
-            progress(min(0.995, n / total), os.path.basename(line.rstrip("/\n")) or line.strip())
-        if cancelled():
-            p.terminate()
-            break
-    err = p.stderr.read()
-    rc = p.wait()
+    # Drain diagnostics independently of stdout. A stderr pipe can fill while
+    # we wait for the next filename, blocking rsync and the installer forever.
+    with tempfile.TemporaryFile() as errors:
+        p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=errors, text=True, bufsize=1,
+                             errors="replace")
+        n = 0
+        last = 0.0
+        try:
+            for line in p.stdout:
+                n += 1
+                now = time.monotonic()
+                if now - last > 0.05:
+                    last = now
+                    progress(min(0.995, n / total), os.path.basename(line.rstrip("/\n")) or line.strip())
+                if cancelled():
+                    p.terminate()
+                    break
+            rc = p.wait()
+        finally:
+            p.stdout.close()
+            if p.poll() is None:
+                p.kill()
+                p.wait()
+        # Keep the final diagnostic even if rsync reports thousands of errors.
+        errors.seek(max(0, errors.tell() - 3000))
+        err = errors.read().decode("utf-8", errors="replace")
     if err.strip():
         log("rsync stderr:", err[-3000:])
     # rsync 23/24 = część plików nie przeniesiona / zniknęła — przy obrazie tylko do odczytu to nie powinno wystąpić
