@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
       release_tag:
-        description: "Dołącz ISO do istniejącego wydania (tag, np. v1.0.0; puste = tylko artefakt)"
+        description: "Dołącz ISO do istniejącego wydania (tag, np. v1.0.0; puste = nowe robocze wydanie)"
         required: false
         default: ""
   release:
@@ -66,20 +66,20 @@ jobs:
             "registry.fedoraproject.org/fedora:$FEDORA" \
             bash -c 'dnf -y install git && cd /src && WORK=/work OUT=/src/out ./build/build.sh'
           ls -lh out
-      - uses: actions/upload-artifact@v4
-        with:
-          name: HoryzontOS-ISO
-          path: |
-            out/*.iso
-            out/*.sha256
-          compression-level: 0
-          retention-days: 14
-      - name: Dołącz do wydania
-        if: github.event_name == 'release' || github.event.inputs.release_tag != ''
+      - name: Zapisz ISO w wydaniu
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name || github.event.inputs.release_tag }}
         run: |
+          if [ -z "$TAG" ]; then
+            TAG="build-${{ github.run_id }}"
+            if ! gh release view "$TAG" -R "${{ github.repository }}" >/dev/null 2>&1; then
+              gh release create "$TAG" --draft --target "${{ github.sha }}" \
+                --title "HoryzontOS — build ${{ github.run_number }}" \
+                --notes "Obraz testowy z commitu ${{ github.sha }}. Niezweryfikowany testem instalacji." \
+                -R "${{ github.repository }}"
+            fi
+          fi
           cd out
           # GitHub przyjmuje w wydaniu pliki mniejsze niż 2 GiB; większe obrazy dzielone na części
           files=$(ls *.sha256)
