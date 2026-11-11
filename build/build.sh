@@ -223,15 +223,27 @@ EOF
     grep -q '^max_parallel_downloads' "$ROOT/etc/dnf/dnf.conf" 2>/dev/null || \
         printf 'max_parallel_downloads=10\n' >> "$ROOT/etc/dnf/dnf.conf"
 
+    # Moduł musi działać podczas składania initramfs: Ventoy uruchamia swoje
+    # skrypty zanim wystartuje dracut, więc naprawa w hooku cmdline byłaby za późna.
+    install -Dm755 "$SRC/build/dracut/95horyzont-ventoy/module-setup.sh" \
+        "$ROOT/usr/lib/dracut/modules.d/95horyzont-ventoy/module-setup.sh"
+
     say "Initramfs (ogólny, z obsługą płyty instalacyjnej)"
     local kver
     kver="$(ls "$ROOT/lib/modules" | sort -V | tail -1)"
     cp "$ROOT/lib/modules/$kver/vmlinuz" "$ROOT/boot/vmlinuz-$kver"
     rm -f "$ROOT"/boot/initramfs-*.img "$ROOT"/boot/loader/entries/*.conf
     # sterowniki nouveau/amdgpu (z ponad 100 MB oprogramowania układowego) ładują się dopiero z systemu na dysku
-    in_root dracut -f --no-hostonly --add "dmsquash-live plymouth" --omit "nfs iscsi fcoe multipath" \
+    in_root dracut -f --no-hostonly --add "dmsquash-live plymouth horyzont-ventoy" --omit "nfs iscsi fcoe multipath" \
         --omit-drivers "nouveau amdgpu radeon" \
         --kver "$kver" "/boot/initramfs-$kver.img" 2>&1 | tail -2
+    # Nie publikuj ISO, jeśli dracut pominął warstwę zgodności z Ventoyem.
+    in_root lsinitrd "/boot/initramfs-$kver.img" > "$WORK/initramfs-files.txt"
+    for hook_path in usr/lib/dracut/hooks/pre-udev usr/lib/dracut/hooks/initqueue/timeout \
+                     var/lib/dracut/hooks/pre-udev var/lib/dracut/hooks/initqueue/timeout; do
+        grep -Eq "[[:space:]]${hook_path}/?$" "$WORK/initramfs-files.txt" || \
+            die "Brak katalogu zgodności Ventoya w initramfs: $hook_path"
+    done
     echo "$kver" > "$WORK/kver"
 
     say "Sprzątanie"
