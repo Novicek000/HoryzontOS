@@ -4,8 +4,12 @@ set -euo pipefail
 image="${1:?usage: verify-squashfs.sh image source-root}"
 source_root="${2:?usage: verify-squashfs.sh image source-root}"
 check_dir="$(mktemp -d "${TMPDIR:-/var/tmp}/horyzont-squash-check.XXXXXX")"
-trap 'rm -rf "$check_dir"' EXIT
-if ! unsquashfs -no-progress -no-xattrs -strict-errors -d "$check_dir/root" "$image" >"$check_dir/extract.log" 2>&1; then
+cleanup() {
+    chmod -R u+rwX "$check_dir" 2>/dev/null || true
+    rm -rf "$check_dir"
+}
+trap cleanup EXIT
+if ! unsquashfs -processors 2 -data-queue 32 -frag-queue 32 -no-progress -no-xattrs -strict-errors -d "$check_dir/root" "$image" >"$check_dir/extract.log" 2>&1; then
     cat "$check_dir/extract.log" >&2
     echo 'Uszkodzony SquashFS: pełny odczyt plików nie powiódł się.' >&2
     exit 1
